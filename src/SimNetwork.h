@@ -58,8 +58,8 @@ struct SimMessage
 		delete data;
 	}
 
-	Address		fromAddr;
-	Address		toAddr;
+	Address		fromAddress;
+	Address		toAddress;
 	int 		timestamp;
 	int 		messageID;
 

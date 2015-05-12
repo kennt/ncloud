@@ -65,8 +65,8 @@ void SimConnection::send(const RawMessage *rawmsg)
 	//$ TODO: check for a max size
 
 	auto msg = make_shared<SimMessage>();
-	msg->fromAddr = this->myAddress;
-	msg->toAddr = rawmsg->toAddress;
+	msg->fromAddress = this->myAddress;
+	msg->toAddress = rawmsg->toAddress;
 	msg->timestamp = par->getCurrtime();
 	msg->dataSize = rawmsg->size;
 
@@ -74,10 +74,6 @@ void SimConnection::send(const RawMessage *rawmsg)
 	memcpy(msg->data, rawmsg->data, rawmsg->size);
 
 	if (auto network = this->simnet.lock()) {
-		// Is this connection valid for this network?
-		if (network->find(this->address()).get() != (IConnection *)this)
-			throw new NetworkException("invalid connection");
-
 		msg->messageID = network->getNextMessageID();
 		network->send(this, msg);
 	}
@@ -88,6 +84,8 @@ void SimConnection::send(const RawMessage *rawmsg)
 
 RawMessage * SimConnection::recv(int timeout)
 {
+	RawMessage * raw = nullptr;
+
 	if (status == IConnection::UNINITIALIZED)
 		throw new NetworkException(EPERM, "Connection not initialized");
 	if (status == IConnection::CLOSED)
@@ -96,18 +94,21 @@ RawMessage * SimConnection::recv(int timeout)
 		throw new NetworkException(ENETDOWN, "Connection not enabled");
 
 	if (auto network = this->simnet.lock()) {
-		if (network->find(this->address()).get() != (IConnection *)this)
-			throw new NetworkException("invalid connection");
-
 		shared_ptr<SimMessage> msg = network->recv(this);
+		if (msg.get() != nullptr)
+		{
+			raw = new RawMessage();
+			raw->toAddress = msg->toAddress;
+			raw->fromAddress = msg->fromAddress;
+			raw->size = msg->dataSize;
+			raw->data = new unsigned char[msg->dataSize];
+			memcpy(raw->data, msg->data, msg->dataSize);
+		}
 	}
 	else {
 		throw new NetworkException("the network object has been deleted");		
 	}
-
-	// Search the list of messages to see if there is a message
-	// for this connection
-	return nullptr;
+	return raw;
 }
 
 
@@ -163,12 +164,32 @@ void SimNetwork::remove(const Address &address)
 void SimNetwork::send(IConnection *conn, shared_ptr<SimMessage> message)
 {
 	// Check to see if conn is valid
+	if (find(conn->address()).get() != conn)
+		throw new NetworkException("invalid connection");
+
+	// Add this to the list of messages
+	messages.emplace_back(message);
 }
 
 shared_ptr<SimMessage> SimNetwork::recv(IConnection *conn)
 {
+	shared_ptr<SimMessage> message = nullptr;
+
 	// Check to see if conn is valid
-	return 0;
+	if (find(conn->address()).get() != conn)
+		throw new NetworkException("invalid connection");
+
+	for (auto it = messages.begin(); it != messages.end(); it++)
+	{
+		if ((*it)->toAddress == conn->address())
+		{
+			message = *it;
+			messages.erase(it);
+			break;
+		}
+	}
+
+	return message;
 }
 
 

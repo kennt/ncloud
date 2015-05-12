@@ -86,18 +86,33 @@ TEST_CASE("SimNetwork data operations", "[SimNetwork]")
 {
 	Address 	addr(0x64656667, 8080);
 	Address 	addr2(0x64656668, 8080);
-	shared_ptr<SimNetwork> network = SimNetwork::createNetwork(nullptr);
+    Params 		params;
+	shared_ptr<SimNetwork> network = SimNetwork::createNetwork(&params);
 	shared_ptr<IConnection> conn = network->create(addr);
 	shared_ptr<SimConnection> simconn = network->findSimConnection(addr);
-	Params 		params;
 
 	RawMessage 	raw;
 	raw.toAddress = addr2;
 	raw.fromAddress = addr;
-	raw.size = 23;
+	raw.size = 11;
 	raw.data = new unsigned char[raw.size];
+	strncpy((char *) raw.data, "0123456789", raw.size);
 
 	SECTION("send and receive data") {
+		RawMessage * recvMsg = nullptr;
+		shared_ptr<IConnection> conn2 = network->create(addr2);
+		
+		recvMsg = conn2->recv(0);
+		REQUIRE( recvMsg == nullptr );
+
+		conn->send(&raw);
+		recvMsg = conn2->recv(0);
+
+		REQUIRE( recvMsg != nullptr );
+		REQUIRE( recvMsg->toAddress == raw.toAddress );
+		REQUIRE( recvMsg->fromAddress == raw.fromAddress );
+		REQUIRE( recvMsg->size == raw.size );
+		REQUIRE( memcmp(recvMsg->data, raw.data, raw.size) == 0 );
 	}
 
 	SECTION("send failure cases") {
