@@ -19,13 +19,7 @@ test: TestMain.o \
 		Params.o \
 		SimNetwork.o \
 		Util.o
-	g++ -o test TestMain.o TestNetwork.o TestSimNetwork.o SimNetwork.o Util.o Params.o EmulNet.o
-
-EmulNet.o: EmulNet.cpp \
-		EmulNet.h \
-		Network.h \
-		SparseMatrix.h \
-	g++ -c EmulNet.cpp ${CFLAGS}
+	g++ -o test TestMain.o TestNetwork.o TestSimNetwork.o SimNetwork.o Util.o Params.o
 
 Log.o: Log.cpp \
 		Log.h \
