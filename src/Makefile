@@ -19,7 +19,19 @@ test: TestMain.o \
 		Params.o \
 		SimNetwork.o \
 		Util.o
-	g++ -o test TestMain.o TestNetwork.o TestSimNetwork.o SimNetwork.o Util.o Params.o
+	g++ -o test TestMain.o TestNetwork.o TestSimNetwork.o SimNetwork.o Util.o Params.o EmulNet.o
+
+EmulNet.o: EmulNet.cpp \
+		EmulNet.h \
+		Network.h \
+		SparseMatrix.h \
+	g++ -c EmulNet.cpp ${CFLAGS}
+
+Log.o: Log.cpp \
+		Log.h \
+		Params.h \
+		Network.h
+	g++ -c Log.cpp ${CFLAGS}
 
 Params.o: Params.cpp \
 		Params.h
@@ -46,8 +58,28 @@ TestNetwork.o: TestNetwork.cpp \
 		Params.h
 	g++ -c TestNetwork.cpp ${CFLAGS}
 
-Application: MP1Node.o EmulNet.o Application.o Log.o Params.o Member.o Trace.o MP2Node.o Node.o HashTable.o Entry.o Message.o 
-	g++ -o Application MP1Node.o EmulNet.o Application.o Log.o Params.o Member.o Trace.o MP2Node.o Node.o HashTable.o Entry.o Message.o ${CFLAGS}
+NetworkNode.o: NetworkNode.cpp \
+		stdincludes.h \
+		Log.h \
+		Params.h \
+		NetworkNode.h
+	g++ -c NetworkNode.cpp ${CFLAGS}
+
+MP1App.o: MP1App.cpp \
+		stdincludes.h \
+		Log.h \
+		Params.h \
+		NetworkNode.h \
+		MP1App.h
+	g++ -c MP1App.cpp ${CFLAGS}
+
+Application: Log.o \
+		Util.o \
+		SimNetwork.o \
+		Params.o \
+		NetworkNode.o \
+		MP1App.o
+	g++ -o Application MP1App.o Log.o Util.o SimNetwork.o Params.o NetworkNode.o ${CFLAGS}
 
 #MP1Node.o: MP1Node.cpp MP1Node.h Log.h Params.h Member.h EmulNet.h Queue.h
 #	g++ -c MP1Node.cpp ${CFLAGS}

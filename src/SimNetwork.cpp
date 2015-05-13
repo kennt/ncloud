@@ -169,6 +169,8 @@ void SimNetwork::send(IConnection *conn, shared_ptr<SimMessage> message)
 
 	// Add this to the list of messages
 	messages.emplace_back(message);
+
+	sent(conn->address().getNetworkID(), par->getCurrtime()) ++;
 }
 
 shared_ptr<SimMessage> SimNetwork::recv(IConnection *conn)
@@ -179,17 +181,61 @@ shared_ptr<SimMessage> SimNetwork::recv(IConnection *conn)
 	if (find(conn->address()).get() != conn)
 		throw new NetworkException("invalid connection");
 
-	for (auto it = messages.begin(); it != messages.end(); it++)
+	for (auto it = messages.cbegin(); it != messages.cend(); it++)
 	{
 		if ((*it)->toAddress == conn->address())
 		{
 			message = *it;
 			messages.erase(it);
+			received(conn->address().getNetworkID(), par->getCurrtime()) ++;
 			break;
 		}
 	}
 
 	return message;
 }
+
+void SimNetwork::writeMsgcountLog(int memberProtocolPort)
+{
+	int j;
+	int sent_total, recv_total;
+	Address 	special(67, 0, 0, 0, memberProtocolPort);;
+	NetworkID 	specialID = special.getNetworkID();
+
+	FILE* file = fopen("msgcount.log", "w+");
+
+	for (auto & elem: connections)
+	{
+		NetworkID id = elem.first;
+		Address 	address(id);
+
+		sent_total = 0;
+		recv_total = 0;
+
+		fprintf(file, "node %s ", address.toString().c_str());
+
+		for (j=0; j<par->getCurrtime(); j++) {
+			sent_total += sent(id, j);
+			recv_total += received(id, j);
+
+			//$ WTF?
+			if (id != specialID) {
+				fprintf(file, " (%4d, %4d)", sent(id, j), received(id, j));
+				if (j % 10 == 9) {
+					fprintf(file, "\n         ");
+				}
+			}
+			else {
+				fprintf(file, "special %4d %4d %4d\n", j, sent(id, j), received(id, j));
+			}
+		}
+		fprintf(file, "\n");
+		fprintf(file, "node %s sent_total %6u  recv_total %6u\n\n", address.toString().c_str(), sent_total, recv_total);
+	}
+
+	fclose(file);
+}
+
+
 
 

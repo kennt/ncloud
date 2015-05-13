@@ -19,11 +19,14 @@ enum testTYPE { CREATE_TEST, READ_TEST, UPDATE_TEST, DELETE_TEST };
  */
 class Params{
 public:
-	int MAX_NNB;                // max number of neighbors
+	int maxNumberOfNeighbors;	// previously MAX_NNB
+	int numberOfNodes;			// previously EN_GPSZ
+
+	//int MAX_NNB;                // max number of neighbors
 	int SINGLE_FAILURE;			// single/multi failure
 	double MSG_DROP_PROB;		// message drop probability
 	double STEP_RATE;		    // dictates the rate of insertion
-	int EN_GPSZ;			    // actual number of peers
+	//int EN_GPSZ;			    // actual number of peers
 	int MAX_MSG_SIZE;
 	int DROP_MSG;
 	int dropmsg;
@@ -31,7 +34,7 @@ public:
 	short PORTNUM;
 	int CRUDTEST;
 	Params();
-	void setparams(char *);
+	void load(const char *);
 	//int getcurrtime();
 
 	int getCurrtime() { return globaltime; }

@@ -61,6 +61,14 @@ protected:
 };
 
 
+inline int makeIPAddress(int a, int b, int c, int d)
+{
+	return ((a & 0xFF) << 24) +
+			((b & 0xFF) << 16) +
+			((c & 0xFF) << 8) +
+			(d & 0xFF);
+}
+
 class Address
 {
 public:
@@ -74,6 +82,18 @@ public:
 	{
 		this->ipaddr = ipaddr;
 		this->port = port;
+	}
+
+	Address(int a, int b, int c, int d, unsigned short port)
+	{
+		this->ipaddr = makeIPAddress(a, b, c, d);
+		this->port = port;
+	}
+
+	Address(NetworkID id)
+	{
+		this->ipaddr = (id >> 16) & 0xFFFFFFFF;
+		this->port = (id & 0xFFFF);
 	}
 
 	Address(const Address &anotherAddress)
@@ -120,7 +140,7 @@ public:
 		return port;
 	}
 
-	string 	toString()
+	string 	toString() const
 	{
 		return string_format("%d.%d.%d.%d:%d",
 			(ipaddr >> 24) & 0xFF,
@@ -133,7 +153,7 @@ public:
 
 	NetworkID getNetworkID() const
 	{
-		return (((unsigned long long )ipaddr) << sizeof(port)*8) + port;
+		return (((unsigned long long )ipaddr) << 16) + port;
 	}
 
 	void parse(string address)

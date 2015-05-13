@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <queue>
 #include <fstream>
+#include <cstdio>
 
 using namespace std;
 

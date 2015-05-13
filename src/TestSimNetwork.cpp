@@ -101,7 +101,6 @@ TEST_CASE("SimNetwork data operations", "[SimNetwork]")
 	SECTION("send and receive data") {
 		RawMessage * recvMsg = nullptr;
 		shared_ptr<IConnection> conn2 = network->create(addr2);
-		
 		recvMsg = conn2->recv(0);
 		REQUIRE( recvMsg == nullptr );
 

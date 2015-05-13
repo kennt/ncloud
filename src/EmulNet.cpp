@@ -2,8 +2,6 @@
 EmulNetConnection::EmulNetConnection(Params *par, EmulNet *emNet)
 {
 	//$ TODO: Check for valid values or par, emNet
-	this->inited = false;
-	this->running = false;
 
 	this->params = par;
 	this->emNet = emNet;
@@ -24,11 +22,6 @@ void EmulNetConnection::init(const Address &myAddress)
 
 	this->connection = emNet->createConnection(this->myAddr);
 
-	//$ TODO: assert that this succeeded, can't do anything if
-	// this fails.
-
-	this->inited = true;
-	this->running = true;
 }
 
 void EmulNetConnection::cleanup()
@@ -65,9 +58,5 @@ int EmulNetConnection::recv(Address *fromAddress, unsigned char **data, size_t *
 	if (!inited || !running)
 		return -1;
 	int ret = this->connection->recv(fromAddress, data, size, timeout);
-	if (ret == 0)
-	{
-		msgReceived[par->getcurrtime()]++;
-	}
 	return ret;
 }
