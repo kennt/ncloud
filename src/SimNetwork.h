@@ -6,6 +6,9 @@
 #include "Network.h"
 #include "SparseMatrix.h"
 
+
+const int MAX_BUFFER_SIZE = 16*1024;
+
 class SimNetwork;
 
 class SimConnection : public IConnection
@@ -23,7 +26,7 @@ public:
 	virtual IConnection::Status getStatus() override;
 
 	virtual void send(const RawMessage *message) override;
-	virtual RawMessage * recv(int timeout) override;
+	virtual unique_ptr<RawMessage> recv(int timeout) override;
 
 	// Use these functions to change state
 	// (for example, changing running to true/false).
@@ -50,15 +53,6 @@ struct SimMessage
 		timestamp = 0;
 		messageID = 0;
 		dataSize = 0;
-		data = NULL;
-	}
-
-	SimMessage(const SimMessage &other) = delete;
-	SimMessage& operator= (SimMessage& other) = delete;
-
-	~SimMessage()
-	{
-		delete data;
 	}
 
 	Address		fromAddress;
@@ -67,8 +61,7 @@ struct SimMessage
 	int 		messageID;
 
 	size_t		dataSize;
-	unsigned char * data;
-
+	unique_ptr<byte[]> data;
 };
 
 
@@ -117,7 +110,7 @@ protected:
 	int 		nextMessageID = 0;
 
 	// a list of the currently buffered messages
-	vector<shared_ptr<SimMessage>>	messages;
+	list<shared_ptr<SimMessage>>	messages;
 
 	// a list of connections
 	map<NetworkID, shared_ptr<SimConnection>> connections;

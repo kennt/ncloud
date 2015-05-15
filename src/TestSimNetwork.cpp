@@ -95,11 +95,11 @@ TEST_CASE("SimNetwork data operations", "[SimNetwork]")
 	raw.toAddress = addr2;
 	raw.fromAddress = addr;
 	raw.size = 11;
-	raw.data = new unsigned char[raw.size];
-	strncpy((char *) raw.data, "0123456789", raw.size);
+	raw.data = unique_ptr<byte[]>(new byte[raw.size]);
+	strncpy((char *) raw.data.get(), "0123456789", raw.size);
 
 	SECTION("send and receive data") {
-		RawMessage * recvMsg = nullptr;
+		unique_ptr<RawMessage> recvMsg;
 		shared_ptr<IConnection> conn2 = network->create(addr2);
 		recvMsg = conn2->recv(0);
 		REQUIRE( recvMsg == nullptr );
@@ -111,7 +111,7 @@ TEST_CASE("SimNetwork data operations", "[SimNetwork]")
 		REQUIRE( recvMsg->toAddress == raw.toAddress );
 		REQUIRE( recvMsg->fromAddress == raw.fromAddress );
 		REQUIRE( recvMsg->size == raw.size );
-		REQUIRE( memcmp(recvMsg->data, raw.data, raw.size) == 0 );
+		REQUIRE( memcmp(recvMsg->data.get(), raw.data.get(), raw.size) == 0 );
 	}
 
 	SECTION("send failure cases") {

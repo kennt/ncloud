@@ -14,3 +14,9 @@ std::string string_format(const std::string& format, Args ... args){
 }
 
 bool isLittleEndian();
+
+template<typename T, typename ...Args>
+std::unique_ptr<T> make_unique( Args&& ...args )
+{
+    return std::unique_ptr<T>( new T( std::forward<Args>(args)... ) );
+}

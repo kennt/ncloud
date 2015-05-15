@@ -11,7 +11,8 @@
 
 using namespace std;
 
-typedef unsigned long long NetworkID;
+using NetworkID = long long;
+using byte = unsigned char;
 
 class AddressException : public exception
 {
@@ -96,23 +97,6 @@ public:
 		this->port = (id & 0xFFFF);
 	}
 
-	Address(const Address &anotherAddress)
-	{
-		this->ipaddr = anotherAddress.ipaddr;
-		this->port = anotherAddress.port;
-	}
-
-	Address& operator =(const Address &other)
-	{
-		if (this == &other)
-			return *this;
-
-		this->ipaddr = other.ipaddr;
-		this->port = other.port;
-
-		return *this;
-	}
-
 	bool operator ==(const Address &other) const
 	{
 		return (this->ipaddr == other.ipaddr &&
@@ -185,7 +169,7 @@ public:
 	// These functions should use htonl, etc.. but that would
 	// require OS-specific header files.  For now, just do
 	// it ourselves.
-	size_t writeToNetworkBuffer(unsigned char *buffer, size_t bufSize)
+	size_t writeToNetworkBuffer(byte *buffer, size_t bufSize)
 	{
 		if (bufSize < (sizeof(ipaddr) + sizeof(port)))
 			throw new AddressException("buffer size to small");
@@ -194,7 +178,7 @@ public:
 		return sizeof(ipaddr) + sizeof(port);
 	}
 
-	void readFromNetworkBuffer(unsigned char *buffer, size_t bufSize)
+	void readFromNetworkBuffer(byte *buffer, size_t bufSize)
 	{
 		if (bufSize < (sizeof(ipaddr) + sizeof(port)))
 			throw new AddressException("buffer is too small");
@@ -218,19 +202,11 @@ struct RawMessage
 	Address 		fromAddress;	// ignored on send()
 	Address 		toAddress;
 	size_t 			size;
-	unsigned char *	data;
+	unique_ptr<byte[]>	data;
 
 	RawMessage()
 	{
 		size = 0;
-		data = nullptr;
-	}
-
-	~RawMessage()
-	{
-		size = 0;
-		delete[] data;
-		data = nullptr;
 	}
 };
 
@@ -249,7 +225,7 @@ public:
 	// CHECK: This assumes that we are doing UDP-like
 	// communication.  Do we want TCP instead?
 	virtual void send(const RawMessage *message) = 0;
-	virtual RawMessage * recv(int timeout) = 0;
+	virtual unique_ptr<RawMessage> recv(int timeout) = 0;
 };
 
 

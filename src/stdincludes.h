@@ -36,6 +36,7 @@
 #include <queue>
 #include <fstream>
 #include <cstdio>
+#include <list>
 
 using namespace std;
 

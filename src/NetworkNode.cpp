@@ -5,7 +5,7 @@ MP1MessageHandler::MP1MessageHandler(Params *par, shared_ptr<NetworkNode> netnod
 {
 }
 
-void MP1MessageHandler::onReceive(const RawMessage *)
+void MP1MessageHandler::onReceive(const RawMessage *message)
 {
 }
 
@@ -17,17 +17,20 @@ NetworkNode::NetworkNode(Params *par, shared_ptr<INetwork> network)
 {
 	this->par = par;
 	this->network = weak_ptr<INetwork>(network);
+	this->failed = false;
 }
 
-void NetworkNode::registerHandler(shared_ptr<IConnection> connection,
+void NetworkNode::registerHandler(ConnectionType conntype,
+								  shared_ptr<IConnection> connection,
 						   		  shared_ptr<IMessageHandler> handler)
 {
 	auto it = handlers.find(connection->address().getNetworkID());
 	if (it != handlers.end())
-		throw;
+		throw new NetworkException("address already registered");
 
 	handlers[connection->address().getNetworkID()] = 
-		std::make_tuple(connection,
+		std::make_tuple(conntype,
+						connection,
 					   	make_shared<MessageQueue>(),
 					   	handler);
 }

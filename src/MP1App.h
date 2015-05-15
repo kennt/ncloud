@@ -13,7 +13,7 @@
 const int	ARGS_COUNT = 2;
 const int	TOTAL_RUNNING_TIME = 700;
 const unsigned short MEMBER_PROTOCOL_PORT = 6000;
-const string COORDINATOR_ADDRESS = "1.0.0.0:6000";
+const unsigned int COORDINATOR_IP = 0x01000000;	// 1.0.0.0
 
 class Application
 {
@@ -35,6 +35,7 @@ protected:
 	Log *					log;
 	vector<shared_ptr<NetworkNode>> nodes;
 	Params *				par;
+	Address 				joinAddress;
 };
 
 #endif /* _MP1APP_H */

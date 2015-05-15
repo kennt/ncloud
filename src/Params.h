@@ -19,17 +19,28 @@ enum testTYPE { CREATE_TEST, READ_TEST, UPDATE_TEST, DELETE_TEST };
  */
 class Params{
 public:
-	int maxNumberOfNeighbors;	// previously MAX_NNB
-	int numberOfNodes;			// previously EN_GPSZ
+	int maxNumberOfNeighbors;	// formerly MAX_NNB
+	int numberOfNodes;			// formerly EN_GPSZ
+
+	int maxMessageSize;			// formerly MAX_MSG_SIZE
+
+	double 	msgDropProbability;	// formerly MSG_DROP_PROB
+	// enableDropMessages enables the dropMessages scenarios
+	// but messages are not actually dropped until
+	// dropMessages is set to true;
+	bool 	enableDropMessages;	// formerly DROP_MSG
+	bool 	dropMessages;		// formerly dropmsg
+
+	double	stepRate;			// formerly STEP_RATE
 
 	//int MAX_NNB;                // max number of neighbors
 	int SINGLE_FAILURE;			// single/multi failure
-	double MSG_DROP_PROB;		// message drop probability
-	double STEP_RATE;		    // dictates the rate of insertion
+	//double MSG_DROP_PROB;		// message drop probability
+	//double STEP_RATE;		    // dictates the rate of insertion
 	//int EN_GPSZ;			    // actual number of peers
-	int MAX_MSG_SIZE;
-	int DROP_MSG;
-	int dropmsg;
+	//int MAX_MSG_SIZE;
+	//int DROP_MSG;
+	//int dropmsg;
 	int allNodesJoined;
 	short PORTNUM;
 	int CRUDTEST;

@@ -20,11 +20,13 @@ void Params::load(const char *config_file) {
 	//trace.funcEntry("Params::setparams");
 	char CRUD[10];
 	FILE *fp = fopen(config_file,"r");
+	int 	t;
 
 	fscanf(fp,"MAX_NNB: %d", &maxNumberOfNeighbors);
 	fscanf(fp,"\nSINGLE_FAILURE: %d", &SINGLE_FAILURE);
-	fscanf(fp,"\nDROP_MSG: %d", &DROP_MSG);
-	fscanf(fp,"\nMSG_DROP_PROB: %lf", &MSG_DROP_PROB);
+	fscanf(fp,"\nDROP_MSG: %d", &t);
+	enableDropMessages = (t != 0);
+	fscanf(fp,"\nMSG_DROP_PROB: %lf", &msgDropProbability);
 	fscanf(fp,"\nCRUD_TEST: %s", CRUD);
 
 	if ( 0 == strcmp(CRUD, "CREATE") ) {
@@ -42,11 +44,11 @@ void Params::load(const char *config_file) {
 
 	//printf("Parameters of the test case: %d %d %d %lf\n", MAX_NNB, SINGLE_FAILURE, DROP_MSG, MSG_DROP_PROB);
 	numberOfNodes = maxNumberOfNeighbors;
-	STEP_RATE=.25;
-	MAX_MSG_SIZE = 4000;
+	stepRate = 0.25;
+	maxMessageSize = 4000;
 	globaltime = 0;
-	dropmsg = 0;
 	allNodesJoined = 0;
+	dropMessages = false;
 	for ( unsigned int i = 0; i < numberOfNodes; i++ ) {
 		allNodesJoined += i;
 	}

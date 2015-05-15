@@ -2,7 +2,7 @@
 #ifndef _SPARSEMATRIX_H
 #define _SPARSEMATRIX_H
 
-template <typename TYPE, typename TROW, typename TCOL>
+template <typename TYPE, typename ROWTYPE, typename COLTYPE>
 class SparseMatrix
 {
 public:
@@ -11,12 +11,12 @@ public:
 	SparseMatrix(const SparseMatrix &) = delete;
 	SparseMatrix& operator =(SparseMatrix &) = delete;
 
-	inline TYPE& operator()(TROW i, TCOL j)
+	inline TYPE& operator()(ROWTYPE i, COLTYPE j)
 	{
 		return matrix[i][j];
 	}
 
-	inline TYPE operator()(TROW i, TCOL j) const
+	inline TYPE operator()(ROWTYPE i, COLTYPE j) const
 	{
 		auto row = matrix.find(i);
 		if (row == matrix.end())
@@ -30,7 +30,7 @@ public:
 
 protected:
 	// for each row there is a map of columns
-	map<TROW, map<TCOL, TYPE>> 	matrix;
+	map<ROWTYPE, map<COLTYPE, TYPE>> 	matrix;
 };
 
 #endif  /* _SPARSEMATRIX_H */

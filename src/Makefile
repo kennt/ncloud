@@ -56,6 +56,7 @@ NetworkNode.o: NetworkNode.cpp \
 		stdincludes.h \
 		Log.h \
 		Params.h \
+		Member.h \
 		NetworkNode.h
 	g++ -c NetworkNode.cpp ${CFLAGS}
 
@@ -64,6 +65,7 @@ MP1App.o: MP1App.cpp \
 		Log.h \
 		Params.h \
 		NetworkNode.h \
+		Member.h \
 		MP1App.h
 	g++ -c MP1App.cpp ${CFLAGS}
 

@@ -70,8 +70,10 @@ void SimConnection::send(const RawMessage *rawmsg)
 	msg->timestamp = par->getCurrtime();
 	msg->dataSize = rawmsg->size;
 
-	msg->data = new unsigned char[rawmsg->size];
-	memcpy(msg->data, rawmsg->data, rawmsg->size);
+	msg->data = unique_ptr<byte[]>(new byte[rawmsg->size]);
+	//msg->data = make_unique<unsigned char[]>()
+	//msg->data = new unsigned char[rawmsg->size];
+	memcpy(msg->data.get(), rawmsg->data.get(), rawmsg->size);
 
 	if (auto network = this->simnet.lock()) {
 		msg->messageID = network->getNextMessageID();
@@ -82,9 +84,9 @@ void SimConnection::send(const RawMessage *rawmsg)
 	}
 }
 
-RawMessage * SimConnection::recv(int timeout)
+unique_ptr<RawMessage> SimConnection::recv(int timeout)
 {
-	RawMessage * raw = nullptr;
+	unique_ptr<RawMessage> raw;
 
 	if (status == IConnection::UNINITIALIZED)
 		throw new NetworkException(EPERM, "Connection not initialized");
@@ -97,12 +99,12 @@ RawMessage * SimConnection::recv(int timeout)
 		shared_ptr<SimMessage> msg = network->recv(this);
 		if (msg.get() != nullptr)
 		{
-			raw = new RawMessage();
+			raw = make_unique<RawMessage>();
 			raw->toAddress = msg->toAddress;
 			raw->fromAddress = msg->fromAddress;
 			raw->size = msg->dataSize;
-			raw->data = new unsigned char[msg->dataSize];
-			memcpy(raw->data, msg->data, msg->dataSize);
+			raw->data = unique_ptr<byte[]>(new byte[msg->dataSize]);
+			memcpy(raw->data.get(), msg->data.get(), msg->dataSize);
 		}
 	}
 	else {
@@ -166,6 +168,15 @@ void SimNetwork::send(IConnection *conn, shared_ptr<SimMessage> message)
 	// Check to see if conn is valid
 	if (find(conn->address()).get() != conn)
 		throw new NetworkException("invalid connection");
+
+	if (messages.size() >= MAX_BUFFER_SIZE)
+		throw new NetworkException("too many messages, buffer limit exceeded");
+
+	if (message->dataSize >= par->maxMessageSize)
+		throw new NetworkException("buffer too large");
+
+	if (par->dropMessages && ((rand() % 100) < (int)(par->msgDropProbability * 100)))
+		return;
 
 	// Add this to the list of messages
 	messages.emplace_back(message);
