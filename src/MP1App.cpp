@@ -1,5 +1,6 @@
 
 #include "MP1App.h"
+#include "MP1.h"
 
 int main(int argc, char *argv[])
 {
@@ -51,10 +52,10 @@ void Application::init()
 		Address 	addr(makeIPAddress(i+1, 0, 0, 0), MEMBER_PROTOCOL_PORT);
 
 		auto networknode = make_shared<NetworkNode>(par, network);
-
 		auto connection = network->create(addr);
-		auto handler = make_shared<MP1MessageHandler>(par, networknode);
-		networknode->registerHandler(NetworkNode::MEMBER, connection, handler);
+		auto mp1handler = make_shared<MP1MessageHandler>(par, networknode);
+
+		networknode->registerHandler(NetworkNode::ConnectionType::MEMBER, connection, mp1handler);
 
 		nodes.push_back(networknode);
 
@@ -81,11 +82,11 @@ void Application::mp1Run()
 
 	for (i=0; i<nodes.size(); i++) {
 		if (par->getCurrtime() > (int)(par->stepRate*i))
-			break;
+			continue;
 
 		auto node = nodes[i];
 		if (node->failed)
-			break;
+			continue;
 
 		// Pull messages off of the net and place onto the queue
 		node->runReceiveLoop();
@@ -95,10 +96,10 @@ void Application::mp1Run()
 		auto node = nodes[i];
 
 		if (par->getCurrtime() == (int)(par->stepRate * i)) {
-			node->nodeStart(joinAddress);
+			node->nodeStart(joinAddress, 0);
 			cout << i << "-th introduced node is using:";
-			for (auto & tuple: node->handlers) {
-				cout << " " << std::get<1>(tuple)->address().toString();
+			for (auto & info: node->handlers) {
+				cout << " " << info.second.connection->address().toString();
 			}
 		}
 	}

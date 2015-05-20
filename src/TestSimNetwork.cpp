@@ -112,6 +112,8 @@ TEST_CASE("SimNetwork data operations", "[SimNetwork]")
 		REQUIRE( recvMsg->fromAddress == raw.fromAddress );
 		REQUIRE( recvMsg->size == raw.size );
 		REQUIRE( memcmp(recvMsg->data.get(), raw.data.get(), raw.size) == 0 );
+
+		// Add test to check if the statistics were updated correctly.
 	}
 
 	SECTION("send failure cases") {

@@ -106,6 +106,14 @@ public:
 
 protected:
 
+	struct ConnectionInfo
+	{
+		shared_ptr<SimConnection> connection;
+
+		// A list of buffered messages for this connection
+		list<shared_ptr<SimMessage>>	messages;
+	};
+
 	Params *	par;
 	int 		nextMessageID = 0;
 
@@ -113,7 +121,7 @@ protected:
 	list<shared_ptr<SimMessage>>	messages;
 
 	// a list of connections
-	map<NetworkID, shared_ptr<SimConnection>> connections;
+	map<NetworkID, ConnectionInfo> connections;
 
 	// Statistical counts
 	// this means int matrix[NetworkID][int]

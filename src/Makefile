@@ -69,13 +69,22 @@ MP1App.o: MP1App.cpp \
 		MP1App.h
 	g++ -c MP1App.cpp ${CFLAGS}
 
+MP1.o:  MP1.cpp \
+		stdincludes.h \
+		Log.h \
+		Params.h \
+		NetworkNode.h \
+		MP1.h
+	g++ -c MP1.cpp ${CFLAGS}
+
 Application: Log.o \
 		Util.o \
 		SimNetwork.o \
 		Params.o \
 		NetworkNode.o \
-		MP1App.o
-	g++ -o Application MP1App.o Log.o Util.o SimNetwork.o Params.o NetworkNode.o ${CFLAGS}
+		MP1App.o \
+		MP1.o
+	g++ -o Application MP1App.o Log.o Util.o SimNetwork.o Params.o NetworkNode.o MP1.o ${CFLAGS}
 
 #MP1Node.o: MP1Node.cpp MP1Node.h Log.h Params.h Member.h EmulNet.h Queue.h
 #	g++ -c MP1Node.cpp ${CFLAGS}

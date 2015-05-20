@@ -71,8 +71,6 @@ void SimConnection::send(const RawMessage *rawmsg)
 	msg->dataSize = rawmsg->size;
 
 	msg->data = unique_ptr<byte[]>(new byte[rawmsg->size]);
-	//msg->data = make_unique<unsigned char[]>()
-	//msg->data = new unsigned char[rawmsg->size];
 	memcpy(msg->data.get(), rawmsg->data.get(), rawmsg->size);
 
 	if (auto network = this->simnet.lock()) {
@@ -123,6 +121,8 @@ SimNetwork::~SimNetwork()
 shared_ptr<IConnection> SimNetwork::create(const Address &address)
 {
 	shared_ptr<IConnection> conn = this->find(address);
+	ConnectionInfo 			conninfo;
+
 	if (conn != nullptr)
 	{
 		// raise an exception, this address is already in use
@@ -133,7 +133,9 @@ shared_ptr<IConnection> SimNetwork::create(const Address &address)
 	auto simconnection = make_shared<SimConnection>(par, shared_from_this());
 	simconnection->init(address);
 
-	connections[address.getNetworkID()] = simconnection;
+	conninfo.connection = simconnection;
+	connections[address.getNetworkID()] = conninfo;;
+
 	return shared_ptr<IConnection>(simconnection);
 }
 
@@ -142,7 +144,7 @@ shared_ptr<IConnection> SimNetwork::find(const Address &address)
 	auto it = connections.find(address.getNetworkID());
 	if (it == connections.end())
 		return nullptr;
-	return shared_ptr<IConnection>(it->second);
+	return shared_ptr<IConnection>(it->second.connection);
 }
 
 shared_ptr<SimConnection> SimNetwork::findSimConnection(const Address &address)
@@ -150,7 +152,7 @@ shared_ptr<SimConnection> SimNetwork::findSimConnection(const Address &address)
     auto it = connections.find(address.getNetworkID());
     if (it == connections.end())
         return nullptr;
-    return it->second;
+    return it->second.connection;
 }
 
 void SimNetwork::remove(const Address &address)
@@ -158,7 +160,7 @@ void SimNetwork::remove(const Address &address)
 	auto it = connections.find(address.getNetworkID());
 	if (it != connections.end())
 	{
-		it->second->setOption<int>("status", IConnection::CLOSED);
+		it->second.connection->setOption<int>("status", IConnection::CLOSED);
 		connections.erase(it);
 	}
 }
@@ -167,7 +169,11 @@ void SimNetwork::send(IConnection *conn, shared_ptr<SimMessage> message)
 {
 	// Check to see if conn is valid
 	if (find(conn->address()).get() != conn)
-		throw new NetworkException("invalid connection");
+		throw new NetworkException("connection not registered");
+
+	auto it = connections.find(message->toAddress.getNetworkID());
+	if (it == connections.end())
+		throw new NetworkException("cannot find connection");
 
 	if (messages.size() >= MAX_BUFFER_SIZE)
 		throw new NetworkException("too many messages, buffer limit exceeded");
@@ -178,31 +184,30 @@ void SimNetwork::send(IConnection *conn, shared_ptr<SimMessage> message)
 	if (par->dropMessages && ((rand() % 100) < (int)(par->msgDropProbability * 100)))
 		return;
 
-	// Add this to the list of messages
-	messages.emplace_back(message);
+	// Add this to the list of messages (note: we are adding the message
+	// to the destination's queue).
+	it->second.messages.emplace_back(message);
 
 	sent(conn->address().getNetworkID(), par->getCurrtime()) ++;
 }
 
 shared_ptr<SimMessage> SimNetwork::recv(IConnection *conn)
 {
-	shared_ptr<SimMessage> message = nullptr;
-
 	// Check to see if conn is valid
 	if (find(conn->address()).get() != conn)
-		throw new NetworkException("invalid connection");
+		throw new NetworkException("connection not registered");
 
-	for (auto it = messages.cbegin(); it != messages.cend(); it++)
-	{
-		if ((*it)->toAddress == conn->address())
-		{
-			message = *it;
-			messages.erase(it);
-			received(conn->address().getNetworkID(), par->getCurrtime()) ++;
-			break;
-		}
-	}
+	auto it = connections.find(conn->address().getNetworkID());
+	if (it == connections.end())
+		throw new NetworkException("cannot find connection");
 
+	if (it->second.messages.empty())
+		return nullptr;
+
+	shared_ptr<SimMessage> message = it->second.messages.front();
+	it->second.messages.pop_front();
+	
+	received(conn->address().getNetworkID(), par->getCurrtime()) ++;
 	return message;
 }
 
@@ -210,7 +215,7 @@ void SimNetwork::writeMsgcountLog(int memberProtocolPort)
 {
 	int j;
 	int sent_total, recv_total;
-	Address 	special(67, 0, 0, 0, memberProtocolPort);;
+	Address 	special(67, 0, 0, 0, memberProtocolPort);
 	NetworkID 	specialID = special.getNetworkID();
 
 	FILE* file = fopen("msgcount.log", "w+");

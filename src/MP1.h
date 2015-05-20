@@ -16,12 +16,21 @@ const int TFAIL 	= 5;
 class MP1MessageHandler: public IMessageHandler
 {
 public:
-	MP1MessageHandler(Params *par, shared_ptr<NetworkNode> netnode);
+	MP1MessageHandler(Params *par, shared_ptr<NetworkNode> netnode)
+		: par(par), netnode(netnode)
+	{
+	}
+
 	virtual ~MP1MessageHandler() {}
 
 	virtual void start() override;
-	virtual void onReceive(const RawMessage *) override;
-	virtual void onEmptyLoop() override;
+	virtual void onMessageReceived(const RawMessage *) override;
+	virtual void onTimeout() override;
+
+protected:
+	Params *				par;
+	weak_ptr<NetworkNode>	netnode;
+	int						timeout;
 };
 
 

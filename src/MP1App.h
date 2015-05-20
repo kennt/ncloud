@@ -35,6 +35,8 @@ protected:
 	Log *					log;
 	vector<shared_ptr<NetworkNode>> nodes;
 	Params *				par;
+
+	// The address of the coordinator node
 	Address 				joinAddress;
 };
 

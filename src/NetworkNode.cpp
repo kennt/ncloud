@@ -1,18 +1,6 @@
 
 #include "NetworkNode.h"
 
-MP1MessageHandler::MP1MessageHandler(Params *par, shared_ptr<NetworkNode> netnode)
-{
-}
-
-void MP1MessageHandler::onReceive(const RawMessage *message)
-{
-}
-
-void MP1MessageHandler::onEmptyLoop()
-{
-}
-
 NetworkNode::NetworkNode(Params *par, shared_ptr<INetwork> network)
 {
 	this->par = par;
@@ -28,11 +16,8 @@ void NetworkNode::registerHandler(ConnectionType conntype,
 	if (it != handlers.end())
 		throw new NetworkException("address already registered");
 
-	handlers[connection->address().getNetworkID()] = 
-		std::make_tuple(conntype,
-						connection,
-					   	make_shared<MessageQueue>(),
-					   	handler);
+	HandlerInfo 	info = {conntype, connection, handler};
+	handlers[connection->address().getNetworkID()] = info;
 }
 
 void NetworkNode::unregisterHandler(const Address &address)
@@ -40,4 +25,25 @@ void NetworkNode::unregisterHandler(const Address &address)
 	auto it = handlers.find(address.getNetworkID());
 	if (it != handlers.end())
 		handlers.erase(it);
+}
+
+void NetworkNode::nodeStart(const Address &joinAddress, int timeout)
+{
+	this->timeout = timeout;
+}
+
+void NetworkNode::runReceiveLoop()
+{
+	for (auto & info : handlers) {
+
+		// Equivalent to calling the old checkMessages()
+		auto raw = info.second.connection->recv(timeout);
+		while (raw != nullptr) {
+			info.second.handler->onMessageReceived(raw.get());
+			raw = info.second.connection->recv(timeout);
+		}
+
+		// Equivalent to calling the old nodeLoopOps()
+		info.second.handler->onTimeout();
+	}
 }

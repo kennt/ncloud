@@ -9,9 +9,6 @@
 
 class NetworkNode;
 
-using MessageQueue = std::list< unique_ptr<RawMessage>>;
-
-
 class IMessageHandler
 {
 public:
@@ -19,8 +16,8 @@ public:
 
 	virtual void start() = 0;
 
-	virtual void onReceive(const RawMessage *message) = 0;
-	virtual void onEmptyLoop() = 0;
+	virtual void onMessageReceived(const RawMessage *message) = 0;
+	virtual void onTimeout() = 0;
 };
 
 
@@ -33,14 +30,18 @@ public:
 	// Connection types:
 	// MEMBER : MP1 Membership protocol
 	// RING : MP2 Ring protocol
-	enum ConnectionType { MEMBER, RING };
+	enum class ConnectionType { MEMBER, RING };
+
+	struct HandlerInfo
+	{
+		ConnectionType 				conntype;
+		shared_ptr<IConnection> 	connection;
+		shared_ptr<IMessageHandler>	handler;
+	};
 
 	NetworkNode(Params *par, shared_ptr<INetwork> network);
 
 	// Contains list of connections to run
-	// This occurs in two steps:
-	//	Step 1: take messages off the connection and add to queue
-	//  Step 2: take messages and queue and send to MessageHandler
 	void registerHandler(ConnectionType conntype,
 						 shared_ptr<IConnection> connection,
 						 shared_ptr<IMessageHandler> handler);
@@ -49,7 +50,7 @@ public:
 
 
 	// Node actions
-	void nodeStart(const Address &joinAddress);
+	void nodeStart(const Address &joinAddress, int timeout);
 
 	// This looks for messages by calling recv() on each
 	// connection
@@ -57,16 +58,10 @@ public:
 
 	void processMessageQueues();
 
-	// Set of tuples
-	using HandlerTuple = std::tuple<ConnectionType,
-									shared_ptr<IConnection>,
-			   						shared_ptr<MessageQueue>,
-			   						shared_ptr<IMessageHandler>>;
-
-	map<NetworkID, HandlerTuple> handlers;
+	map<NetworkID, HandlerInfo> handlers;
 
 	// Has the node failed?  Failure means that the node
-	// no longer sends/receives messages.
+	// no longer sends/receives messages across all connections.
 	bool 		failed;
 
 	// MP1 stuff
@@ -78,6 +73,7 @@ public:
 protected:
 	Params *			par;
 	weak_ptr<INetwork>	network;
+	int 				timeout;
 };
 
 #endif /* _NETWORKNODE_H */
