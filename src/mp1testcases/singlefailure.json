@@ -1,0 +1,7 @@
+// Single-failure configuration
+{
+	"maxNumberOfNodes" : 10,
+	"singleFailure" : true,
+	"enableDropMessages" : false,
+	"messageDropProbabiity": 0.1
+}

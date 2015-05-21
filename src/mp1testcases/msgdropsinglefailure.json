@@ -1,0 +1,7 @@
+// Message drop with single failure configuration
+{
+	"maxNumberOfNodes" : 10,
+	"singleFailure" : true,
+	"enableDropMessages" : true,
+	"messageDropProbabiity": 0.1
+}
