@@ -7,7 +7,7 @@
 #* 
 #***********************
 
-CFLAGS =  -Wall -g -std=c++11
+CFLAGS =  -Wall -g -std=c++11 -D DEBUG
 
 all: Application test
 
@@ -18,8 +18,9 @@ test: TestMain.o \
 		TestSimNetwork.o \
 		Params.o \
 		SimNetwork.o \
-		Util.o
-	g++ -o test TestMain.o TestNetwork.o TestSimNetwork.o SimNetwork.o Util.o Params.o
+		Util.o \
+		jsoncpp.o
+	g++ -o test TestMain.o TestNetwork.o TestSimNetwork.o SimNetwork.o Util.o Params.o jsoncpp.o
 
 Log.o: Log.cpp \
 		Log.h \
@@ -77,14 +78,18 @@ MP1.o:  MP1.cpp \
 		MP1.h
 	g++ -c MP1.cpp ${CFLAGS}
 
+jsoncpp.o: jsoncpp.cpp
+	g++ -c jsoncpp.cpp ${CFLAGS}
+
 Application: Log.o \
 		Util.o \
 		SimNetwork.o \
 		Params.o \
 		NetworkNode.o \
 		MP1App.o \
-		MP1.o
-	g++ -o Application MP1App.o Log.o Util.o SimNetwork.o Params.o NetworkNode.o MP1.o ${CFLAGS}
+		MP1.o \
+		jsoncpp.o
+	g++ -o Application MP1App.o Log.o Util.o SimNetwork.o Params.o NetworkNode.o MP1.o jsoncpp.o ${CFLAGS}
 
 #MP1Node.o: MP1Node.cpp MP1Node.h Log.h Params.h Member.h EmulNet.h Queue.h
 #	g++ -c MP1Node.cpp ${CFLAGS}

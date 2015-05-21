@@ -22,7 +22,7 @@ void SimConnection::setOption(const char *name, int val)
 	if (strcmp(name, "status") == 0)
 		this->status = static_cast<IConnection::Status>(val);
 	else
-		throw new NetworkException(string_format("Unknown option : %s", name));
+		throw NetworkException(string_format("Unknown option : %s", name));
 }
 
 template<>
@@ -31,7 +31,7 @@ int SimConnection::getOption(const char *name)
 	if (strcmp(name, "status") == 0)
 		return static_cast<int>(this->status);
 	else
-		throw new NetworkException(string_format("Unknown option : %s", name));
+		throw NetworkException(string_format("Unknown option : %s", name));
 	return 0;
 }
 
@@ -56,11 +56,11 @@ void SimConnection::send(const RawMessage *rawmsg)
 	//$ TODO: Determine what the correct error
 	// codes should be here.
 	if (status == IConnection::UNINITIALIZED)
-		throw new NetworkException(EPERM, "Connection not initialized");
+		throw NetworkException(EPERM, "Connection not initialized");
 	if (status == IConnection::CLOSED)
-		throw new NetworkException(ENETDOWN, "Connection has been closed");
+		throw NetworkException(ENETDOWN, "Connection has been closed");
 	if (status != IConnection::RUNNING)
-		throw new NetworkException(ENETDOWN, "Connection not enabled");
+		throw NetworkException(ENETDOWN, "Connection not enabled");
 
 	//$ TODO: check for a max size
 
@@ -78,7 +78,7 @@ void SimConnection::send(const RawMessage *rawmsg)
 		network->send(this, msg);
 	}
 	else {
-		throw new NetworkException("the network object has been deleted");
+		throw NetworkException("the network object has been deleted");
 	}
 }
 
@@ -87,11 +87,11 @@ unique_ptr<RawMessage> SimConnection::recv(int timeout)
 	unique_ptr<RawMessage> raw;
 
 	if (status == IConnection::UNINITIALIZED)
-		throw new NetworkException(EPERM, "Connection not initialized");
+		throw NetworkException(EPERM, "Connection not initialized");
 	if (status == IConnection::CLOSED)
-		throw new NetworkException(ENETDOWN, "Connection has been closed");
+		throw NetworkException(ENETDOWN, "Connection has been closed");
 	if (status != IConnection::RUNNING)
-		throw new NetworkException(ENETDOWN, "Connection not enabled");
+		throw NetworkException(ENETDOWN, "Connection not enabled");
 
 	if (auto network = this->simnet.lock()) {
 		shared_ptr<SimMessage> msg = network->recv(this);
@@ -106,7 +106,7 @@ unique_ptr<RawMessage> SimConnection::recv(int timeout)
 		}
 	}
 	else {
-		throw new NetworkException("the network object has been deleted");		
+		throw NetworkException("the network object has been deleted");		
 	}
 	return raw;
 }
@@ -127,7 +127,7 @@ shared_ptr<IConnection> SimNetwork::create(const Address &address)
 	{
 		// raise an exception, this address is already in use
 		// only allowed to create a single instance
-		throw new NetworkException("address already in use");
+		throw NetworkException("address already in use");
 
 	}
 	auto simconnection = make_shared<SimConnection>(par, shared_from_this());
@@ -169,17 +169,17 @@ void SimNetwork::send(IConnection *conn, shared_ptr<SimMessage> message)
 {
 	// Check to see if conn is valid
 	if (find(conn->address()).get() != conn)
-		throw new NetworkException("connection not registered");
+		throw NetworkException("connection not registered");
 
 	auto it = connections.find(message->toAddress.getNetworkID());
 	if (it == connections.end())
-		throw new NetworkException("cannot find connection");
+		throw NetworkException("cannot find connection");
 
 	if (messages.size() >= MAX_BUFFER_SIZE)
-		throw new NetworkException("too many messages, buffer limit exceeded");
+		throw NetworkException("too many messages, buffer limit exceeded");
 
 	if (message->dataSize >= par->maxMessageSize)
-		throw new NetworkException("buffer too large");
+		throw NetworkException("buffer too large");
 
 	if (par->dropMessages && ((rand() % 100) < (int)(par->msgDropProbability * 100)))
 		return;
@@ -195,18 +195,18 @@ shared_ptr<SimMessage> SimNetwork::recv(IConnection *conn)
 {
 	// Check to see if conn is valid
 	if (find(conn->address()).get() != conn)
-		throw new NetworkException("connection not registered");
+		throw NetworkException("connection not registered");
 
 	auto it = connections.find(conn->address().getNetworkID());
 	if (it == connections.end())
-		throw new NetworkException("cannot find connection");
+		throw NetworkException("cannot find connection");
 
 	if (it->second.messages.empty())
 		return nullptr;
 
 	shared_ptr<SimMessage> message = it->second.messages.front();
 	it->second.messages.pop_front();
-	
+
 	received(conn->address().getNetworkID(), par->getCurrtime()) ++;
 	return message;
 }

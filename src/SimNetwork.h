@@ -104,6 +104,12 @@ public:
 		this->nextMessageID = 1;
 	}
 
+	int getSentCount(NetworkID netID, int time)
+	{	return sent(netID, time); }
+
+	int getReceivedCount(NetworkID netID, int time)
+	{	return received(netID, time); }
+
 protected:
 
 	struct ConnectionInfo

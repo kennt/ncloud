@@ -6,11 +6,25 @@
 
 #include "Params.h"
 #include "Util.h"
+#include "json/json.h"
+#include "fstream"
+
 
 /**
  * Constructor
  */
-Params::Params(): PORTNUM(8001) {}
+Params::Params():
+	maxNumberOfNeighbors(0),
+	numberOfNodes(0),
+	maxMessageSize(4000),
+	msgDropProbability(0),
+	enableDropMessages(false),
+	dropMessages(false),
+	stepRate(0.25),
+	singleFailure(false),
+	CRUDTestType(TEST_TYPE::NONE),
+	globaltime(0)
+{}
 
 /**
  * FUNCTION NAME: setparams
@@ -18,48 +32,36 @@ Params::Params(): PORTNUM(8001) {}
  * DESCRIPTION: Set the parameters for this test case
  */
 void Params::load(const char *config_file) {
-	//trace.funcEntry("Params::setparams");
-	char CRUD[10];
-	FILE *fp = fopen(config_file,"r");
-	int 	t;
+	std::ifstream config_doc(config_file, std::ifstream::binary);
+	if (config_doc.fail())
+		throw AppException("cannot find the config_file");
 
-	if (!fp) {
-		throw new AppException("cannot find the config_file");
-	}
+	try {
+		Json::Value	root;
+		config_doc >> root;		// read in the root node
 
-	fscanf(fp,"MAX_NNB: %d", &maxNumberOfNeighbors);
-	fscanf(fp,"\nSINGLE_FAILURE: %d", &SINGLE_FAILURE);
-	fscanf(fp,"\nDROP_MSG: %d", &t);
-	enableDropMessages = (t != 0);
-	fscanf(fp,"\nMSG_DROP_PROB: %lf", &msgDropProbability);
-	fscanf(fp,"\nCRUD_TEST: %s", CRUD);
+		maxNumberOfNeighbors = root.get("maxNumberOfNodes", 0).asInt();
+		enableDropMessages = root.get("enableDropMessages", false).asBool();
+		singleFailure = root.get("singleFailure", false).asBool();
+		msgDropProbability = root.get("messageDropProbability", 0).asDouble();
 
-	if ( 0 == strcmp(CRUD, "CREATE") ) {
-		this->CRUDTEST = CREATE_TEST;
-	}
-	else if ( 0 == strcmp(CRUD, "READ") ) {
-		this->CRUDTEST = READ_TEST;
-	}
-	else if ( 0 == strcmp(CRUD, "UPDATE") ) {
-		this->CRUDTEST = UPDATE_TEST;
-	}
-	else if ( 0 == strcmp(CRUD, "DELETE") ) {
-		this->CRUDTEST = DELETE_TEST;
-	}
+		string s = root.get("CRUDTest", "").asString();
 
-	//printf("Parameters of the test case: %d %d %d %lf\n", MAX_NNB, SINGLE_FAILURE, DROP_MSG, MSG_DROP_PROB);
-	numberOfNodes = maxNumberOfNeighbors;
-	stepRate = 0.25;
-	maxMessageSize = 4000;
-	globaltime = 0;
-	allNodesJoined = 0;
-	dropMessages = false;
-	for ( unsigned int i = 0; i < numberOfNodes; i++ ) {
-		allNodesJoined += i;
+		if (s == "CREATE")
+			CRUDTestType = TEST_TYPE::CREATE;
+		else if (s == "READ")
+			CRUDTestType = TEST_TYPE::READ;
+		else if (s == "UPDATE")
+			CRUDTestType = TEST_TYPE::UPDATE;
+		else if (s == "DELETE")
+			CRUDTestType = TEST_TYPE::DELETE;
+
+		numberOfNodes = maxNumberOfNeighbors;
 	}
-	fclose(fp);
-	//trace.funcExit("Params::setparams", SUCCESS);
-	return;
+	catch(exception & e) {
+		throw AppException(string_format("Error reading in the config file: %s : %s",
+			config_file, e.what()).c_str());
+	}
 }
 
 /**

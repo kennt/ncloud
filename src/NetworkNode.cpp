@@ -1,8 +1,9 @@
 
 #include "NetworkNode.h"
 
-NetworkNode::NetworkNode(Params *par, shared_ptr<INetwork> network)
+NetworkNode::NetworkNode(string name, Params *par, shared_ptr<INetwork> network)
 {
+	this->name = name;
 	this->par = par;
 	this->network = weak_ptr<INetwork>(network);
 	this->failed = false;
@@ -14,7 +15,7 @@ void NetworkNode::registerHandler(ConnectionType conntype,
 {
 	auto it = handlers.find(connection->address().getNetworkID());
 	if (it != handlers.end())
-		throw new NetworkException("address already registered");
+		throw NetworkException("address already registered");
 
 	HandlerInfo 	info = {conntype, connection, handler};
 	handlers[connection->address().getNetworkID()] = info;
@@ -27,12 +28,32 @@ void NetworkNode::unregisterHandler(const Address &address)
 		handlers.erase(it);
 }
 
+vector<Address> NetworkNode::getAddresses()
+{
+	vector<Address> 	v;
+	for (auto & info : handlers)
+	{
+		v.push_back(info.second.connection->address());
+	}
+	return v;
+}
+
+shared_ptr<IConnection> NetworkNode::getConnection(ConnectionType conntype)
+{
+	for (auto & info : handlers) {
+		if (info.second.conntype == conntype) {
+			return info.second.connection;
+		}
+	}
+	return nullptr;
+}
+
 void NetworkNode::nodeStart(const Address &joinAddress, int timeout)
 {
 	this->timeout = timeout;
 }
 
-void NetworkNode::runReceiveLoop()
+void NetworkNode::receiveMessages()
 {
 	for (auto & info : handlers) {
 

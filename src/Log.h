@@ -35,4 +35,16 @@ protected:
 	int 	numWrites = 0;
 };
 
+
+#ifdef DEBUG
+
+	#define DEBUG_LOG(log, address, msg, ...) log->log(address, msg, ##__VA_ARGS__)
+
+#else
+
+	#define DEBUG_LOG(log, name, msg, ...)
+
+#endif
+
+
 #endif 	/* _LOG_H */

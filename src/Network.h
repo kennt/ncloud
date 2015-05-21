@@ -145,17 +145,17 @@ public:
 		size_t	pos = address.find(":");
 
 		if (pos == string::npos)
-			throw new AddressException("missing ':'");
+			throw AddressException("missing ':'");
 
 		// For simplicity, make this explicit, expect a
 		// full address
 		unsigned short a, b, c, d;
 		if (sscanf(address.substr(0, pos).c_str(), "%hu.%hu.%hu.%hu", &a, &b, &c, &d) != 4)
-			throw new AddressException("improper IP address format");
+			throw AddressException("improper IP address format");
 
 		// Make sure that we're not passing in bogus addresses
 		if ((a > 255) || (b > 255) || (c > 255) || (d > 255))
-			throw new AddressException("IPv4 address sections must be less than 255");
+			throw AddressException("IPv4 address sections must be less than 255");
 
 		this->ipaddr = (a << 24) + (b << 16) + (c << 8) + d;
 		this->port = (unsigned short) stoi(address.substr(pos + 1,
@@ -172,7 +172,7 @@ public:
 	size_t writeToNetworkBuffer(byte *buffer, size_t bufSize)
 	{
 		if (bufSize < (sizeof(ipaddr) + sizeof(port)))
-			throw new AddressException("buffer size to small");
+			throw AddressException("buffer size to small");
 		memcpy((void *) &buffer[0], &this->ipaddr, sizeof(unsigned int));
 		memcpy(&buffer[4], &this->port, sizeof(unsigned short));
 		return sizeof(ipaddr) + sizeof(port);
@@ -181,7 +181,7 @@ public:
 	void readFromNetworkBuffer(byte *buffer, size_t bufSize)
 	{
 		if (bufSize < (sizeof(ipaddr) + sizeof(port)))
-			throw new AddressException("buffer is too small");
+			throw AddressException("buffer is too small");
 		unsigned int addr = 0;
 		unsigned short port = 0;
 
@@ -196,6 +196,12 @@ protected:
 	unsigned int 	ipaddr;
 	unsigned short	port;
 };
+
+inline ostream& operator<<(ostream& os, const Address& address)
+{
+	os << address.toString();
+	return os;
+}
 
 struct RawMessage
 {

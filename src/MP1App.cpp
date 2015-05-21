@@ -19,9 +19,9 @@ int main(int argc, char *argv[])
 		app.init(argv[1]);
 		app.run();
 	}
-	catch (exception *pe)
+	catch (exception & e)
 	{
-		cout << pe->what() << endl;
+		cout << e.what() << endl;
 	}
 
 	return SUCCESS;
@@ -30,7 +30,8 @@ int main(int argc, char *argv[])
 Application::Application() :
 	joinAddress(COORDINATOR_IP, MEMBER_PROTOCOL_PORT)
 {
-	log = new Log(par);
+	log = nullptr;
+	par = nullptr;
 }
 
 Application::~Application()
@@ -46,6 +47,8 @@ void Application::init(const char *filename)
 	par = new Params();
 	par->load(filename);
 
+	log = new Log(par);
+
 	simnetwork = SimNetwork::createNetwork(par);
 
 	// Create all of the network nodes
@@ -56,12 +59,14 @@ void Application::init(const char *filename)
 
 	for (int i=0; i<par->numberOfNodes; i++) {
 		Address 	addr(makeIPAddress(i+1, 0, 0, 0), MEMBER_PROTOCOL_PORT);
+		string		name = string_format("Node %d:%d", i, MEMBER_PROTOCOL_PORT);
 
-		auto networknode = make_shared<NetworkNode>(par, network);
+		auto networknode = make_shared<NetworkNode>(name, par, network);
 		auto connection = network->create(addr);
 		auto mp1handler = make_shared<MP1MessageHandler>(par, networknode);
 
-		networknode->registerHandler(NetworkNode::ConnectionType::MEMBER, connection, mp1handler);
+		networknode->registerHandler(NetworkNode::ConnectionType::MEMBER,
+									 connection, mp1handler);
 
 		nodes.push_back(networknode);
 
@@ -72,7 +77,10 @@ void Application::init(const char *filename)
 void Application::run()
 {
 	for (; par->getCurrtime() < TOTAL_RUNNING_TIME; par->addToCurrtime(1)) {
+		// run the main loop for each node
 		mp1Run();
+
+		// fail certain nodes
 		fail();
 	}
 
@@ -84,36 +92,61 @@ void Application::run()
 
 void Application::mp1Run()
 {
-	int     i;
-
-	for (i=0; i<nodes.size(); i++) {
-		if (par->getCurrtime() > (int)(par->stepRate*i))
-			continue;
-
-		auto node = nodes[i];
-		if (node->failed)
-			continue;
-
-		// Pull messages off of the net and place onto the queue
-		node->runReceiveLoop();
-	}
-
-	for (i=static_cast<int>(nodes.size()-1); i >= 0; --i) {
+	for (int i = (int)(nodes.size()-1); i >= 0; --i) {
 		auto node = nodes[i];
 
+		// Start up the nodes (not all the nodes start up together)
 		if (par->getCurrtime() == (int)(par->stepRate * i)) {
 			node->nodeStart(joinAddress, 0);
 			cout << i << "-th introduced node is using:";
-			for (auto & info: node->handlers) {
-				cout << " " << info.second.connection->address().toString();
-			}
+			auto conn = node->getConnection(NetworkNode::ConnectionType::MEMBER);
+			if (conn != nullptr)
+				cout << " " << conn->address();
             cout << endl;
+		}
+		// normal message handling after startup
+		else if ((par->getCurrtime() > (int)(par->stepRate*i)) &&
+				 !node->failed) {
+			// Pull messages off of the net and call the callbacks
+			node->receiveMessages();
 		}
 	}
 }
 
 void Application::fail()
 {
+	Address 	addr;
+
+	int removed;
+	shared_ptr<IConnection> conn;
+
+	if (par->enableDropMessages && par->getCurrtime() == 50) {
+		par->dropMessages = true;
+	}
+
+	if (par->singleFailure && par->getCurrtime() == 100) {
+		removed = rand() % par->numberOfNodes;
+
+		conn = nodes[removed]->getConnection(NetworkNode::ConnectionType::MEMBER);
+		DEBUG_LOG(log, conn->address(), "Node failed at time=%d", par->getCurrtime());
+
+		nodes[removed]->failed = true;
+	}
+	else if (par->getCurrtime() == 100) {
+		removed = rand() % par->numberOfNodes;
+
+		for (int i = removed; i < removed + par->numberOfNodes/2; i++) {
+
+			conn = nodes[i]->getConnection(NetworkNode::ConnectionType::MEMBER);
+			DEBUG_LOG(log, conn->address(), "Node failed at time=%d", par->getCurrtime());
+
+			nodes[i]->failed = true;
+		}
+	}
+
+	if (par->enableDropMessages && par->getCurrtime() == 300) {
+		par->dropMessages = false;
+	}
 }
 
 

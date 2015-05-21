@@ -10,49 +10,53 @@
 #include "stdincludes.h"
 #include "Params.h"
 
-enum testTYPE { CREATE_TEST, READ_TEST, UPDATE_TEST, DELETE_TEST };
-
-/**
- * CLASS NAME: Params
- *
- * DESCRIPTION: Params class describing the test cases
- */
-class Params{
+class Params
+{
 public:
-	int maxNumberOfNeighbors;	// formerly MAX_NNB
-	int numberOfNodes;			// formerly EN_GPSZ
+	enum class TEST_TYPE { NONE, CREATE, READ, UPDATE, DELETE };
+	
+	Params();
+	void load(const char *filename);
 
-	int maxMessageSize;			// formerly MAX_MSG_SIZE
+	// formerly MAX_NNB
+	int 	maxNumberOfNeighbors;
+
+	// formerly EN_GPSZ
+	int 	numberOfNodes;
+
+	// formerly MAX_MSG_SIZE
+	int 	maxMessageSize;
 
 	double 	msgDropProbability;	// formerly MSG_DROP_PROB
+
 	// enableDropMessages enables the dropMessages scenarios
 	// but messages are not actually dropped until
 	// dropMessages is set to true;
-	bool 	enableDropMessages;	// formerly DROP_MSG
-	bool 	dropMessages;		// formerly dropmsg
+	// formerly DROP_MSG
+	bool 	enableDropMessages;
 
-	double	stepRate;			// formerly STEP_RATE
+	// formerly dropmsg
+	bool 	dropMessages;
 
-	//int MAX_NNB;                // max number of neighbors
-	int SINGLE_FAILURE;			// single/multi failure
-	//double MSG_DROP_PROB;		// message drop probability
-	//double STEP_RATE;		    // dictates the rate of insertion
-	//int EN_GPSZ;			    // actual number of peers
-	//int MAX_MSG_SIZE;
-	//int DROP_MSG;
-	//int dropmsg;
-	int allNodesJoined;
-	short PORTNUM;
-	int CRUDTEST;
-	Params();
-	void load(const char *);
-	//int getcurrtime();
+	// formerly STEP_RATE
+	double	stepRate;
 
-	int getCurrtime() { return globaltime; }
-	void addToCurrtime(int inc) { globaltime += inc; }
+	// formerly SINGLE_FAILURE
+	bool 	singleFailure;
+
+	// formerly CRUDTEST
+	TEST_TYPE 	CRUDTestType;
+
+	// Moved to be part of the MP2 Application
+	//int 	allNodesJoined;
+
+	void	resetCurrtime() { globaltime = 0; }
+	int 	getCurrtime() { return globaltime; }
+	void 	addToCurrtime(int inc) { globaltime += inc; }
 
 protected:
 	int globaltime;
 };
+
 
 #endif /* _PARAMS_H_ */

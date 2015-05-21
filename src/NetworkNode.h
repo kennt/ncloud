@@ -27,25 +27,17 @@ public:
 class NetworkNode
 {
 public:
-	// Connection types:
-	// MEMBER : MP1 Membership protocol
-	// RING : MP2 Ring protocol
+	// Describes what the connection is for
+	// MP1 : MEMBER
+	// MP2 : RING
 	enum class ConnectionType { MEMBER, RING };
 
-	struct HandlerInfo
-	{
-		ConnectionType 				conntype;
-		shared_ptr<IConnection> 	connection;
-		shared_ptr<IMessageHandler>	handler;
-	};
+	NetworkNode(string name, Params *par, shared_ptr<INetwork> network);
 
-	NetworkNode(Params *par, shared_ptr<INetwork> network);
-
-	// Contains list of connections to run
+	// Contains list of connections to use
 	void registerHandler(ConnectionType conntype,
 						 shared_ptr<IConnection> connection,
 						 shared_ptr<IMessageHandler> handler);
-
 	void unregisterHandler(const Address &address);
 
 
@@ -54,11 +46,12 @@ public:
 
 	// This looks for messages by calling recv() on each
 	// connection
-	void runReceiveLoop();
+	void receiveMessages();
 
-	void processMessageQueues();
-
-	map<NetworkID, HandlerInfo> handlers;
+	string getName()
+	{	return this->name; }
+	vector<Address> getAddresses();
+	shared_ptr<IConnection> getConnection(ConnectionType conntype);
 
 	// Has the node failed?  Failure means that the node
 	// no longer sends/receives messages across all connections.
@@ -71,6 +64,16 @@ public:
 	//Node 		node;
 
 protected:
+
+	struct HandlerInfo
+	{
+		ConnectionType 				conntype;
+		shared_ptr<IConnection> 	connection;
+		shared_ptr<IMessageHandler>	handler;
+	};
+
+	string 				name;	
+	map<NetworkID, HandlerInfo> handlers;
 	Params *			par;
 	weak_ptr<INetwork>	network;
 	int 				timeout;

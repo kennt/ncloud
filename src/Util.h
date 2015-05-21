@@ -15,6 +15,7 @@ std::string string_format(const std::string& format, Args ... args){
 
 bool isLittleEndian();
 
+// C++11 does not support make_unique(), have to wait for C++14
 template<typename T, typename ...Args>
 std::unique_ptr<T> make_unique( Args&& ...args )
 {
