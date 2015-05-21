@@ -20,3 +20,22 @@ std::unique_ptr<T> make_unique( Args&& ...args )
 {
     return std::unique_ptr<T>( new T( std::forward<Args>(args)... ) );
 }
+
+// Generic exception
+class AppException : public std::exception
+{
+public:
+	AppException(const char *description)
+	{
+		desc = description;
+	}
+
+	virtual const char *what() const throw()
+	{
+		return desc.c_str();
+	}
+
+protected:
+	std::string desc;
+};
+

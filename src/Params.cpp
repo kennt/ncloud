@@ -5,6 +5,7 @@
  **********************************/
 
 #include "Params.h"
+#include "Util.h"
 
 /**
  * Constructor
@@ -21,6 +22,10 @@ void Params::load(const char *config_file) {
 	char CRUD[10];
 	FILE *fp = fopen(config_file,"r");
 	int 	t;
+
+	if (!fp) {
+		throw new AppException("cannot find the config_file");
+	}
 
 	fscanf(fp,"MAX_NNB: %d", &maxNumberOfNeighbors);
 	fscanf(fp,"\nSINGLE_FAILURE: %d", &SINGLE_FAILURE);

@@ -29,8 +29,8 @@ void Log::log(const Address &address, const char *fmt, ...)
 
 		int magicNumber = 0;
 		string magic = MAGIC_NUMBER;
-		int len = magic.length();
-		for (int i = 0; i < len; i++)
+		size_t len = magic.length();
+		for (size_t i = 0; i < len; i++)
 			magicNumber += (int) magic.at(i);
 		fprintf(fpDebug, "%x\n", magicNumber);
 

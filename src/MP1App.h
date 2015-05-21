@@ -18,13 +18,13 @@ const unsigned int COORDINATOR_IP = 0x01000000;	// 1.0.0.0
 class Application
 {
 public:
-	Application(const char *filename);
+	Application();
 	~Application();
 
 	Application(const Application &) = delete;
 	Application &operator= (const Application &) = delete;
 
-	void init();
+	void init(const char *filename);
 	void run();
 
 	void mp1Run();

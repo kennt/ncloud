@@ -11,22 +11,25 @@ int main(int argc, char *argv[])
 
 	// If you want a deterministic scenario, then enter
 	// a value here rather than time(NULL)
-	srand(time(NULL));
+	srand((unsigned int)time(NULL));
 
-	Application app(argv[1]);
+	try {
+		Application app;
 
-	app.init();
-	app.run();
+		app.init(argv[1]);
+		app.run();
+	}
+	catch (exception *pe)
+	{
+		cout << pe->what() << endl;
+	}
 
 	return SUCCESS;
 }
 
-Application::Application(const char *filename) :
+Application::Application() :
 	joinAddress(COORDINATOR_IP, MEMBER_PROTOCOL_PORT)
 {
-	par = new Params();
-	par->load(filename);
-
 	log = new Log(par);
 }
 
@@ -38,8 +41,11 @@ Application::~Application()
 	delete par;
 }
 
-void Application::init()
+void Application::init(const char *filename)
 {
+	par = new Params();
+	par->load(filename);
+
 	simnetwork = SimNetwork::createNetwork(par);
 
 	// Create all of the network nodes
@@ -78,7 +84,7 @@ void Application::run()
 
 void Application::mp1Run()
 {
-	int 	i;
+	int     i;
 
 	for (i=0; i<nodes.size(); i++) {
 		if (par->getCurrtime() > (int)(par->stepRate*i))
@@ -92,7 +98,7 @@ void Application::mp1Run()
 		node->runReceiveLoop();
 	}
 
-	for (i=nodes.size(); i >= 0; --i) {
+	for (i=static_cast<int>(nodes.size()-1); i >= 0; --i) {
 		auto node = nodes[i];
 
 		if (par->getCurrtime() == (int)(par->stepRate * i)) {
@@ -101,6 +107,7 @@ void Application::mp1Run()
 			for (auto & info: node->handlers) {
 				cout << " " << info.second.connection->address().toString();
 			}
+            cout << endl;
 		}
 	}
 }
