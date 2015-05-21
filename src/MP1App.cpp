@@ -63,7 +63,7 @@ void Application::init(const char *filename)
 
 		auto networknode = make_shared<NetworkNode>(name, par, network);
 		auto connection = network->create(addr);
-		auto mp1handler = make_shared<MP1MessageHandler>(par, networknode);
+		auto mp1handler = make_shared<MP1MessageHandler>(log, par, networknode);
 
 		networknode->registerHandler(NetworkNode::ConnectionType::MEMBER,
 									 connection, mp1handler);
@@ -92,6 +92,16 @@ void Application::run()
 
 void Application::mp1Run()
 {
+	// Receive all messages (places them into a queue)
+	for (int i = 0; i < (int) nodes.size(); i++) {
+		if (par->getCurrtime() > (int)(par->stepRate*i)) {
+			nodes[i]->receiveMessages();
+		}
+	}
+
+	// Process all current messages
+	// This is split up into two steps so that messages
+	// will always have at least a delay of 1 time unit.
 	for (int i = (int)(nodes.size()-1); i >= 0; --i) {
 		auto node = nodes[i];
 
@@ -106,9 +116,9 @@ void Application::mp1Run()
 		}
 		// normal message handling after startup
 		else if ((par->getCurrtime() > (int)(par->stepRate*i)) &&
-				 !node->failed) {
+				 !node->failed()) {
 			// Pull messages off of the net and call the callbacks
-			node->receiveMessages();
+			node->processQueuedMessages();
 		}
 	}
 }
@@ -130,17 +140,17 @@ void Application::fail()
 		conn = nodes[removed]->getConnection(NetworkNode::ConnectionType::MEMBER);
 		DEBUG_LOG(log, conn->address(), "Node failed at time=%d", par->getCurrtime());
 
-		nodes[removed]->failed = true;
+		nodes[removed]->fail();
 	}
 	else if (par->getCurrtime() == 100) {
-		removed = rand() % par->numberOfNodes;
+		removed = rand() % par->numberOfNodes/2;
 
 		for (int i = removed; i < removed + par->numberOfNodes/2; i++) {
 
 			conn = nodes[i]->getConnection(NetworkNode::ConnectionType::MEMBER);
 			DEBUG_LOG(log, conn->address(), "Node failed at time=%d", par->getCurrtime());
 
-			nodes[i]->failed = true;
+			nodes[i]->fail();
 		}
 	}
 

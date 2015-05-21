@@ -4,14 +4,25 @@
 
 #include "stdincludes.h"
 
+struct MemberListEntry
+{
+	Address 	address;
+	int 		timestamp;
+	int 		heartbeat;
+};
+
 class MemberInfo
 {
 public:
-	MemberInfo()
+	MemberInfo() :
+		inGroup(false),
+		inited(false)
 	{
 	}
 
-protected:
+	list<MemberListEntry> 	memberList;
+	bool 					inGroup;
+	bool 					inited;
 };
 
 

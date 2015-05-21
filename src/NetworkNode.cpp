@@ -6,7 +6,7 @@ NetworkNode::NetworkNode(string name, Params *par, shared_ptr<INetwork> network)
 	this->name = name;
 	this->par = par;
 	this->network = weak_ptr<INetwork>(network);
-	this->failed = false;
+	this->hasFailed = false;
 }
 
 void NetworkNode::registerHandler(ConnectionType conntype,
@@ -17,7 +17,11 @@ void NetworkNode::registerHandler(ConnectionType conntype,
 	if (it != handlers.end())
 		throw NetworkException("address already registered");
 
-	HandlerInfo 	info = {conntype, connection, handler};
+	HandlerInfo 	info = { conntype,
+							 connection,
+							 handler,
+							 make_shared<list<unique_ptr<RawMessage>>>()
+							};
 	handlers[connection->address().getNetworkID()] = info;
 }
 
@@ -48,23 +52,48 @@ shared_ptr<IConnection> NetworkNode::getConnection(ConnectionType conntype)
 	return nullptr;
 }
 
+void NetworkNode::fail()
+{
+	//$ TODO: Do I need to set the fail state on my
+	// connections?  (or maybe just as long as the node knows)
+	this->hasFailed = true;
+}
+
 void NetworkNode::nodeStart(const Address &joinAddress, int timeout)
 {
+	this->hasFailed = false;
 	this->timeout = timeout;
+
+	// Need to start up all of the message handlers
+	for (auto & info : handlers) {
+		info.second.handler->start(joinAddress);
+	}
 }
 
 void NetworkNode::receiveMessages()
 {
 	for (auto & info : handlers) {
-
-		// Equivalent to calling the old checkMessages()
 		auto raw = info.second.connection->recv(timeout);
 		while (raw != nullptr) {
-			info.second.handler->onMessageReceived(raw.get());
+			info.second.queue->push_back(std::move(raw));
 			raw = info.second.connection->recv(timeout);
+		}
+	}
+}
+
+void NetworkNode::processQueuedMessages()
+{
+	for (auto & info : handlers) {
+		// Equivalent to calling the old checkMessages()
+		while (!info.second.queue->empty()) {
+			auto raw = std::move(info.second.queue->front());
+			info.second.queue->pop_front();
+			if (raw.get())
+				info.second.handler->onMessageReceived(raw.get());
 		}
 
 		// Equivalent to calling the old nodeLoopOps()
 		info.second.handler->onTimeout();
 	}
 }
+

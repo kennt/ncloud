@@ -9,7 +9,7 @@
 
 CFLAGS =  -Wall -g -std=c++11 -D DEBUG
 
-all: Application test
+all: Application
 
 Application: SimNetwork.o
 

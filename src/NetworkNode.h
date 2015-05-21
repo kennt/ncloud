@@ -7,14 +7,12 @@
 #include "Network.h"
 #include "Member.h"
 
-class NetworkNode;
-
 class IMessageHandler
 {
 public:
 	virtual ~IMessageHandler() {}
 
-	virtual void start() = 0;
+	virtual void start(const Address& address) = 0;
 
 	virtual void onMessageReceived(const RawMessage *message) = 0;
 	virtual void onTimeout() = 0;
@@ -47,15 +45,16 @@ public:
 	// This looks for messages by calling recv() on each
 	// connection
 	void receiveMessages();
+	void processQueuedMessages();
 
-	string getName()
-	{	return this->name; }
+	string getName()	{ return this->name; }
 	vector<Address> getAddresses();
 	shared_ptr<IConnection> getConnection(ConnectionType conntype);
 
 	// Has the node failed?  Failure means that the node
 	// no longer sends/receives messages across all connections.
-	bool 		failed;
+	bool 		failed() const { return hasFailed; }
+	void 		fail();
 
 	// MP1 stuff
 	MemberInfo 	member;
@@ -70,8 +69,10 @@ protected:
 		ConnectionType 				conntype;
 		shared_ptr<IConnection> 	connection;
 		shared_ptr<IMessageHandler>	handler;
+		shared_ptr<list<unique_ptr<RawMessage>>> queue;
 	};
 
+	bool 				hasFailed;
 	string 				name;	
 	map<NetworkID, HandlerInfo> handlers;
 	Params *			par;
