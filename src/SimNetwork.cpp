@@ -1,3 +1,10 @@
+/*****
+ * SimNetwork.cpp
+ *
+ * See LICENSE for details.
+ *
+ *
+ *****/
 
 #include "stdincludes.h"
 

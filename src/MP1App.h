@@ -1,3 +1,11 @@
+/*****
+ * MP1App.h
+ *
+ * See LICENSE for details.
+ *
+ *
+ *****/
+
 
 #ifndef NCLOUD_MP1APP_H
 #define NCLOUD_MP1APP_H

@@ -1,3 +1,10 @@
+/*****
+ * NetworkNode.h
+ *
+ * See LICENSE for details.
+ *
+ *
+ *****/
 
 #ifndef NCLOUD_NETWORKNODE_H
 #define NCLOUD_NETWORKNODE_H

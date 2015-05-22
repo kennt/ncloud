@@ -1,3 +1,10 @@
+/*****
+ * TestSimNetwork.cpp
+ *
+ * See LICENSE for details.
+ *
+ *
+ *****/
 
 #include "stdincludes.h"
 #include "catch.hpp"

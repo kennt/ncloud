@@ -1,3 +1,11 @@
+/*****
+ * Log.h
+ *
+ * See LICENSE for details.
+ *
+ *****/
+
+
 #ifndef NCLOUD_LOG_H
 #define NCLOUD_LOG_H
 
@@ -6,7 +14,6 @@
 #include "Network.h"
 
 const int 	 MAX_WRITES = 1;
-const string MAGIC_NUMBER = "CS425";
 const string DBG_LOG = "dbg.log";
 const string STATS_LOG = "stats.log";
 

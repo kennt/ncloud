@@ -1,6 +1,13 @@
+/*****
+ * MP1.h
+ *
+ * See LICENSE for details.
+ *
+ *****/
 
-#ifndef NCLOUD_MP1NODE_H
-#define NCLOUD_MP1NODE_H
+
+#ifndef NCLOUD_MP1_H
+#define NCLOUD_MP1_H
 
 #include "stdincludes.h"
 #include "Log.h"
@@ -82,5 +89,5 @@ protected:
 };
 
 
-#endif /* NCLOUD_MP1NODE_H */
+#endif /* NCLOUD_MP1_H */
 

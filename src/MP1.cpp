@@ -1,3 +1,10 @@
+/*****
+ * MP1.cpp
+ *
+ * See LICENSE for details.
+ *
+ *
+ *****/
 
 #include "MP1.h"
 #include "NetworkNode.h"

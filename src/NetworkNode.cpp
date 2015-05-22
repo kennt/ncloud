@@ -1,3 +1,10 @@
+/*****
+ * NetworkNode.cpp
+ *
+ * See LICENSE for details.
+ *
+ *
+ *****/
 
 #include "NetworkNode.h"
 

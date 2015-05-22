@@ -1,12 +1,13 @@
+/*****
+ * Util.cpp
+ *
+ * See LICENSE for details.
+ *
+ *
+ *****/
 
 #include "Util.h"
 #include "Network.h"
-
-bool isLittleEndian()
-{
-	int n = 1;
-	return (*(char *)&n == 1);
-}
 
 unique_ptr<RawMessage> rawMessageFromJson(const Address &fromAddress,
 										  const Address &toAddress,

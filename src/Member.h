@@ -1,3 +1,10 @@
+/*****
+ * Member.h
+ *
+ * See LICENSE for details.
+ *
+ *****/
+
 
 #ifndef NCLOUD_MEMBER_H
 #define NCLOUD_MEMBER_H

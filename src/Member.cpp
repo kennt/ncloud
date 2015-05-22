@@ -1,3 +1,10 @@
+/*****
+ * Member.cpp
+ *
+ * See LICENSE for details.
+ *
+ *
+ *****/
 
 #include "Member.h"
 

@@ -1,8 +1,10 @@
-/**********************************
- * FILE NAME: Params.h
+/*****
+ * Params.h
  *
- * DESCRIPTION: Header file of Parameter class
- **********************************/
+ * See LICENSE for details.
+ *
+ *
+ *****/
 
 #ifndef NCLOUD_PARAMS_H_
 #define NCLOUD_PARAMS_H_

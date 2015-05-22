@@ -1,6 +1,13 @@
+/*****
+ * SparseMatrix.h
+ *
+ * See LICENSE for details.
+ *
+ *
+ *****/
 
-#ifndef _SPARSEMATRIX_H
-#define _SPARSEMATRIX_H
+#ifndef NCLOUD_SPARSEMATRIX_H
+#define NCLOUD_SPARSEMATRIX_H
 
 template <typename TYPE, typename ROWTYPE, typename COLTYPE>
 class SparseMatrix
@@ -33,4 +40,4 @@ protected:
 	map<ROWTYPE, map<COLTYPE, TYPE>> 	matrix;
 };
 
-#endif  /* _SPARSEMATRIX_H */
+#endif  /* NCLOUD_SPARSEMATRIX_H */

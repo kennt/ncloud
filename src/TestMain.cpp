@@ -1,9 +1,10 @@
-/*
+/*****
  * TestMain.cpp
  *
- * Contains the main() function for running the tests.
+ * See LICENSE for details.
  *
-*/
+ *
+ *****/
 
 #include "stdincludes.h"
 

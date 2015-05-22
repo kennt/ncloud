@@ -1,3 +1,10 @@
+/*****
+ * MP1App.cpp
+ *
+ * See LICENSE for details.
+ *
+ *
+ *****/
 
 #include "MP1App.h"
 #include "MP1.h"

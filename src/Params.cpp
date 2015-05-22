@@ -1,8 +1,10 @@
-/**********************************
- * FILE NAME: Params.cpp
+/*****
+ * Params.cpp
  *
- * DESCRIPTION: Definition of Parameter class
- **********************************/
+ * See LICENSE for details.
+ *
+ *
+ *****/
 
 #include "Params.h"
 #include "Util.h"

@@ -1,3 +1,10 @@
+/*****
+ * Log.cpp
+ *
+ * See LICENSE for details.
+ *
+ *
+ *****/
 
 
 #include "Log.h"
@@ -26,13 +33,13 @@ void Log::log(const Address &address, const char *fmt, ...)
 	{
 		fpStats = fopen(STATS_LOG.c_str(), "w");
 		fpDebug = fopen(DBG_LOG.c_str(), "w");
-
-		int magicNumber = 0;
-		string magic = MAGIC_NUMBER;
-		size_t len = magic.length();
-		for (size_t i = 0; i < len; i++)
-			magicNumber += (int) magic.at(i);
-		fprintf(fpDebug, "%x\n", magicNumber);
+/*****
+ * MP1App.h
+ *
+ * See LICENSE for details.
+ *
+ *
+ *****/
 
 		firstTime = false;
 	}

@@ -1,8 +1,10 @@
-/**********************************
- * FILE NAME: stdincludes.h
+/*****
+ * stdincludes.h
  *
- * DESCRIPTION: standard header file
- **********************************/
+ * See LICENSE for details.
+ *
+ *
+ *****/
 
 #ifndef NCLOUD_STDINCLUDES_H_
 #define NCLOUD_STDINCLUDES_H_
