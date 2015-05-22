@@ -37,11 +37,13 @@ void MP1MessageHandler::start(const Address &joinAddress)
 
 void MP1MessageHandler::onMessageReceived(const RawMessage *raw)
 {
+	auto node = netnode.lock();
+	if (!node)
+		throw AppException("Network has been deleted");
+
 	Json::Value root = jsonFromRawMessage(raw);
 
 	MEMBER_MSGTYPE msgtype = static_cast<MEMBER_MSGTYPE>(root.get("msgtype", 0).asInt());
-	auto node = netnode.lock();
-
 	switch(msgtype) {
 		case MEMBER_MSGTYPE::JOINREQ: {
 				DEBUG_LOG(log, raw->toAddress, "JOINREQ received from %s", 

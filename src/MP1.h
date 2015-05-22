@@ -58,8 +58,6 @@ protected:
 	long 		heartbeat;
 };
 
-unique_ptr<RawMessage> rawMessageFromJson(const Address &fromAddress,
-	const Address &toAddress, Json::Value root);
 
 class MP1MessageHandler: public IMessageHandler
 {
