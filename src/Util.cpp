@@ -30,7 +30,7 @@ unique_ptr<RawMessage> rawMessageFromJson(const Address &fromAddress,
 Json::Value jsonFromRawMessage(const RawMessage *raw)
 {
 	Json::Value root;
-	istringstream is((const char *) raw->data.get(), raw->size);
+	istringstream is(std::string((const char *)raw->data.get(), raw->size));
 	is >> root;
 	return root;	
 }

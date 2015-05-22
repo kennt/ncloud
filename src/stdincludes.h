@@ -31,7 +31,7 @@
 #include <iostream>
 #include <vector>
 #include <map>
-#include <string>
+#include <cstring>
 #include <algorithm>
 #include <queue>
 #include <fstream>

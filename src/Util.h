@@ -2,10 +2,7 @@
 #ifndef _UTIL_H
 #define _UTIL_H
 
-#include <memory>
-#include <iostream>
-#include <string>
-#include <cstdio>
+#include "stdincludes.h"
 #include "json/json.h"
 
 template<typename ... Args>
