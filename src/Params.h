@@ -25,7 +25,7 @@ public:
 	int 	numberOfNodes;
 
 	// formerly MAX_MSG_SIZE
-	int 	maxMessageSize;
+	size_t 	maxMessageSize;
 
 	double 	msgDropProbability;	// formerly MSG_DROP_PROB
 
