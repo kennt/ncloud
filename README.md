@@ -21,8 +21,6 @@ There are two main abstract interfaces: INetwork and IConnection.  INetwork is a
 
 According there are concrete classes: SimNetwork and SimConnection, that simulate the network.
 
-In the future, I plan on writing the SocketNetwork and SocketConnection code.
-
 
 ### NetworkNode and protocol interfaces
 The main class here is the NetworkNode. This is used to hold together all of the data that belongs to this "logical node". Thus the MP1/MP2 classes are all part of this class.
@@ -31,13 +29,13 @@ In addition, there is a new interface, the IMessageHandler.  This is what is cal
 
 
 ### Application layer
-This is where the main send/receive loop are driven from.  Currently, there is MP1App.cpp.  But MP2App.cpp and SocketApp.cpp are envisioned.
+This is where the main send/receive loop are driven from.  Currently, there is MP1App.cpp.
 
 
 ## Differences from the old version
 1. Ports are now used in the code. In my code I have used port 6000 for the membership protocol and 6001 for the ring protocol. This will allow one machine to run different processes all taking part in the membership/ring protocol.
-2. JSON is used as for the communication protocol. Which means that other languages could be used to provide nodes on the network. One idea may be for an interactive Python session to participate in the membership protocol.
-3. The params file is now a JSON file.  Makes it easier to read in.
+2. JSON is used as for the communication protocol.
+3. The params file is now a JSON file.
 
 
 ## Future work
@@ -45,4 +43,4 @@ This is where the main send/receive loop are driven from.  Currently, there is M
 * Implement MP2App.cpp
 * Create a version that uses sockets
 * Better testing of the higher level code
-* Write an interactive node in Python
+
