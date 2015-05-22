@@ -34,7 +34,6 @@ void MP1MessageHandler::onMessageReceived(const RawMessage *raw)
 
 	MEMBER_MSGTYPE msgtype = static_cast<MEMBER_MSGTYPE>(root.get("msgtype", 0).asInt());
 	auto node = netnode.lock();
-	auto conn = node->getConnection(NetworkNode::ConnectionType::MEMBER);
 
 	switch(msgtype) {
 		case MEMBER_MSGTYPE::JOINREQ: {
@@ -42,12 +41,17 @@ void MP1MessageHandler::onMessageReceived(const RawMessage *raw)
 					raw->fromAddress.toString().c_str());	
 
 				string saddr = root.get("address", "").asString();
+				long hb = root.get("heartbeat", 0).asInt64();
+
 				Address addr;
 				addr.parse(saddr);
-				long hb = root.get("heartbeat", 0).asInt64();
 				node->member.addToMemberList(addr, par->getCurrtime(), hb);	
 
-				log->logNodeAdd(conn->address(), addr);
+				log->logNodeAdd(connection->address(), addr);
+
+				//
+				//$ CODE:  Your code goes here (to send the join reply)
+				//
 			}
 			break;
 		//
@@ -63,7 +67,7 @@ void MP1MessageHandler::onTimeout()
 	// run the node maintenance loop
 	auto node = netnode.lock();
 	if (!node)
-		throw AppException("");
+		throw AppException("Network has been deleted");
 
 	// Wait until you're in the group
 	if (!node->member.inGroup)
@@ -79,26 +83,22 @@ void MP1MessageHandler::joinGroup(const Address & joinAddress)
 {
 	auto node = netnode.lock();
 	if (!node)
-		throw AppException("");
+		throw AppException("Network has been deleted");
 
-	auto conn = node->getConnection(NetworkNode::ConnectionType::MEMBER);
-	if (!conn)
-		throw AppException("");
-
-	if (conn->address() == joinAddress) {
+	if (connection->address() == joinAddress) {
 		// we are the first process to join the group
 		// boot up the group
 
-		DEBUG_LOG(log, conn->address(), "Starting up group...");
+		DEBUG_LOG(log, connection->address(), "Starting up group...");
 		node->member.inGroup = true;
 	}
 	else {
 		// Send a JOINREQ to the coordinator	
-		JoinRequestMessage 	joinReq(conn->address(), joinAddress, node->member.heartbeat);
+		JoinRequestMessage 	joinReq(connection->address(), joinAddress, node->member.heartbeat);
 		auto raw = joinReq.toRawMessage();
 
-		DEBUG_LOG(log, conn->address(), "Trying to join...");
+		DEBUG_LOG(log, connection->address(), "Trying to join...");
 
-		conn->send(raw.get());
+		connection->send(raw.get());
 	}
 }

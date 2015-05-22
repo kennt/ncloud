@@ -12,6 +12,7 @@ struct MemberListEntry
 	long 		heartbeat;
 };
 
+
 class MemberInfo
 {
 public:

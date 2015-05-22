@@ -57,8 +57,11 @@ unique_ptr<RawMessage> rawMessageFromJson(const Address &fromAddress,
 class MP1MessageHandler: public IMessageHandler
 {
 public:
-	MP1MessageHandler(Log *log, Params *par, shared_ptr<NetworkNode> netnode)
-		: log(log), par(par), netnode(netnode), timeout(0)
+	MP1MessageHandler(Log *log, 
+					  Params *par,
+					  shared_ptr<NetworkNode> netnode,
+					  shared_ptr<IConnection> connection)
+		: log(log), par(par), netnode(netnode), connection(connection), timeout(0)
 	{
 	}
 
@@ -74,6 +77,7 @@ protected:
 	Log *					log;
 	Params *				par;
 	weak_ptr<NetworkNode>	netnode;
+	shared_ptr<IConnection>	connection;
 	int						timeout;
 };
 

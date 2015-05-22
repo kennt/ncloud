@@ -63,7 +63,7 @@ void Application::init(const char *filename)
 
 		auto networknode = make_shared<NetworkNode>(name, par, network);
 		auto connection = network->create(addr);
-		auto mp1handler = make_shared<MP1MessageHandler>(log, par, networknode);
+		auto mp1handler = make_shared<MP1MessageHandler>(log, par, networknode, connection);
 
 		networknode->registerHandler(NetworkNode::ConnectionType::MEMBER,
 									 connection, mp1handler);
