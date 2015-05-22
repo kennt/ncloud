@@ -37,6 +37,7 @@
 #include <fstream>
 #include <cstdio>
 #include <list>
+#include <memory>
 
 using namespace std;
 
