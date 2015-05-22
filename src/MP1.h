@@ -24,38 +24,18 @@ enum MEMBER_MSGTYPE { NONE=0, JOINREQ };
 
 class NetworkNode;
 
-class Message
+
+struct JoinRequestMessage
 {
-public:
-	Message(MEMBER_MSGTYPE msgtype) : msgtype(msgtype) {}
-	virtual ~Message() {};
-
-	virtual unique_ptr<RawMessage> toRawMessage() = 0;
-
-protected:
-	MEMBER_MSGTYPE 	msgtype;
-};
-
-
-class JoinRequestMessage : public Message
-{
-public:
-	JoinRequestMessage(const Address &fromAddress,
-				   	   const Address &toAddress,
-				   	   long heartbeat)
-		: Message(MEMBER_MSGTYPE::JOINREQ), 
-		fromAddress(fromAddress),
-		toAddress(toAddress),
-		heartbeat(heartbeat)
-	{
-	}
-
-	virtual unique_ptr<RawMessage> toRawMessage() override;
-
-protected:
-	Address 	fromAddress;
-	Address 	toAddress;
+	// Implied MEMBER_MSGTYPE::JOINREQ
+	Address 	address;
 	long 		heartbeat;
+
+	JoinRequestMessage() : heartbeat(0)
+	{}
+
+	void loadFromRawMessage(const RawMessage *);
+	unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);
 };
 
 

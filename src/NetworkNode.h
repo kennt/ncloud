@@ -37,7 +37,7 @@ public:
 	// MP2 : RING
 	enum class ConnectionType { MEMBER, RING };
 
-	NetworkNode(string name, Params *par, shared_ptr<INetwork> network);
+	NetworkNode(string name, Log *log, Params *par, shared_ptr<INetwork> network);
 
 	// Contains list of connections to use
 	void registerHandler(ConnectionType conntype,
@@ -82,6 +82,7 @@ protected:
 	bool 				hasFailed;
 	string 				name;	
 	map<NetworkID, HandlerInfo> handlers;
+	Log *				log;
 	Params *			par;
 	weak_ptr<INetwork>	network;
 	int 				timeout;

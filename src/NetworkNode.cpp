@@ -8,9 +8,11 @@
 
 #include "NetworkNode.h"
 
-NetworkNode::NetworkNode(string name, Params *par, shared_ptr<INetwork> network)
+NetworkNode::NetworkNode(string name, Log *log, Params *par, shared_ptr<INetwork> network)
+	: member(log, par)
 {
 	this->name = name;
+	this->log = log;
 	this->par = par;
 	this->network = weak_ptr<INetwork>(network);
 	this->hasFailed = false;

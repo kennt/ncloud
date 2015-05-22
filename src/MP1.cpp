@@ -10,15 +10,26 @@
 #include "NetworkNode.h"
 #include "json/json.h"
 
-unique_ptr<RawMessage> JoinRequestMessage::toRawMessage()
+unique_ptr<RawMessage> JoinRequestMessage::toRawMessage(const Address &from,
+														const Address &to)
 {
 	//$ TODO: Check to see that we have all the data we need
 	Json::Value 	root;
-	root["msgtype"] = msgtype;
-	root["address"] = fromAddress.toString();
-	root["heartbeat"] = (Json::Int64) heartbeat;
+	root["msgtype"] = MEMBER_MSGTYPE::JOINREQ;
+	root["addr"] = this->address.toString();
+	root["hb"] = (Json::Int64) this->heartbeat;
 
-	return rawMessageFromJson(fromAddress, toAddress, root);
+	return rawMessageFromJson(from, to, root);
+}
+
+void JoinRequestMessage::loadFromRawMessage(const RawMessage *raw)
+{
+	Json::Value root = jsonFromRawMessage(raw);
+
+	Address addr;
+	addr.parse(root.get("addr", "").asString());
+	this->address = addr;
+	this->heartbeat = root.get("hb", 0).asInt64();
 }
 
 void MP1MessageHandler::start(const Address &joinAddress)
@@ -49,14 +60,14 @@ void MP1MessageHandler::onMessageReceived(const RawMessage *raw)
 				DEBUG_LOG(log, raw->toAddress, "JOINREQ received from %s", 
 					raw->fromAddress.toString().c_str());	
 
-				string saddr = root.get("address", "").asString();
-				long hb = root.get("heartbeat", 0).asInt64();
+				JoinRequestMessage joinReq;
+				joinReq.loadFromRawMessage(raw);
 
-				Address addr;
-				addr.parse(saddr);
-				node->member.addToMemberList(addr, par->getCurrtime(), hb);	
+				node->member.addToMemberList(joinReq.address,
+											 par->getCurrtime(),
+											 joinReq.heartbeat);
 
-				log->logNodeAdd(connection->address(), addr);
+				log->logNodeAdd(connection->address(), joinReq.address);
 
 				//
 				//$ CODE:  Your code goes here (to send the join reply)
@@ -100,11 +111,18 @@ void MP1MessageHandler::joinGroup(const Address & joinAddress)
 
 		DEBUG_LOG(log, connection->address(), "Starting up group...");
 		node->member.inGroup = true;
+		node->member.addToMemberList(connection->address(),
+									 par->getCurrtime(),
+									 node->member.heartbeat);
 	}
 	else {
-		// Send a JOINREQ to the coordinator	
-		JoinRequestMessage 	joinReq(connection->address(), joinAddress, node->member.heartbeat);
-		auto raw = joinReq.toRawMessage();
+		// Send a JOINREQ to the coordinator
+		JoinRequestMessage joinReq;
+
+		joinReq.address = connection->address();
+		joinReq.heartbeat = node->member.heartbeat;
+
+		auto raw = joinReq.toRawMessage(connection->address(), joinAddress);
 
 		DEBUG_LOG(log, connection->address(), "Trying to join...");
 

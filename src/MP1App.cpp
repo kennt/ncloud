@@ -68,7 +68,7 @@ void Application::init(const char *filename)
 		Address 	addr(makeIPAddress(i+1, 0, 0, 0), MEMBER_PROTOCOL_PORT);
 		string		name = string_format("Node %d:%d", i, MEMBER_PROTOCOL_PORT);
 
-		auto networknode = make_shared<NetworkNode>(name, par, network);
+		auto networknode = make_shared<NetworkNode>(name, log, par, network);
 		auto connection = network->create(addr);
 		auto mp1handler = make_shared<MP1MessageHandler>(log, par, networknode, connection);
 
