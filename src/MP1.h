@@ -34,10 +34,12 @@ class JoinRequestMessage : public Message
 {
 public:
 	JoinRequestMessage(const Address &fromAddress,
-				   const Address &toAddress)
+				   	   const Address &toAddress,
+				   	   long heartbeat)
 		: Message(MEMBER_MSGTYPE::JOINREQ), 
 		fromAddress(fromAddress),
-		toAddress(toAddress)
+		toAddress(toAddress),
+		heartbeat(heartbeat)
 	{
 	}
 
@@ -46,6 +48,7 @@ public:
 protected:
 	Address 	fromAddress;
 	Address 	toAddress;
+	long 		heartbeat;
 };
 
 unique_ptr<RawMessage> rawMessageFromJson(const Address &fromAddress,

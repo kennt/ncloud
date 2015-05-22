@@ -3,12 +3,13 @@
 #define _MEMBER_H
 
 #include "stdincludes.h"
+#include "Network.h"
 
 struct MemberListEntry
 {
 	Address 	address;
 	int 		timestamp;
-	int 		heartbeat;
+	long 		heartbeat;
 };
 
 class MemberInfo
@@ -23,6 +24,9 @@ public:
 	list<MemberListEntry> 	memberList;
 	bool 					inGroup;
 	bool 					inited;
+	long					heartbeat;
+
+	void addToMemberList(const Address &address, int timestamp, long heartbeat);
 };
 
 

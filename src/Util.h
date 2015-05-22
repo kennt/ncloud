@@ -1,9 +1,12 @@
+
+#ifndef _UTIL_H
+#define _UTIL_H
+
 #include <memory>
 #include <iostream>
 #include <string>
 #include <cstdio>
-
-//using namespace std; //Don't if you're in a header-file
+#include "json/json.h"
 
 template<typename ... Args>
 std::string string_format(const std::string& format, Args ... args){
@@ -55,3 +58,13 @@ protected:
 	std::string desc;
 };
 
+
+struct RawMessage;
+class Address;
+
+std::unique_ptr<RawMessage> rawMessageFromJson(const Address &fromAddress,
+                                               const Address &toAddress,
+                                               Json::Value root);
+Json::Value jsonFromRawMessage(const RawMessage *raw);
+
+#endif  /* _UTIL_H */

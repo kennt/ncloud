@@ -81,6 +81,11 @@ MP1.o:  MP1.cpp \
 jsoncpp.o: jsoncpp.cpp
 	g++ -c jsoncpp.cpp ${CFLAGS}
 
+Member.o: Member.cpp \
+		Network.h \
+		NetworkNode.h
+	g++ -c Member.cpp ${CFLAGS}
+
 Application: Log.o \
 		Util.o \
 		SimNetwork.o \
@@ -88,8 +93,9 @@ Application: Log.o \
 		NetworkNode.o \
 		MP1App.o \
 		MP1.o \
-		jsoncpp.o
-	g++ -o Application MP1App.o Log.o Util.o SimNetwork.o Params.o NetworkNode.o MP1.o jsoncpp.o ${CFLAGS}
+		jsoncpp.o \
+		Member.o
+	g++ -o Application MP1App.o Log.o Util.o SimNetwork.o Params.o NetworkNode.o MP1.o jsoncpp.o Member.o ${CFLAGS}
 
 #MP1Node.o: MP1Node.cpp MP1Node.h Log.h Params.h Member.h EmulNet.h Queue.h
 #	g++ -c MP1Node.cpp ${CFLAGS}

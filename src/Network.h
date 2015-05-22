@@ -162,36 +162,6 @@ public:
 									 	   address.size()-pos-1));
 	}
 
-
-	// Read/write from a buffer (assuming network order for
-	// the byte-layout).
-	//
-	// These functions should use htonl, etc.. but that would
-	// require OS-specific header files.  For now, just do
-	// it ourselves.
-	size_t writeToNetworkBuffer(byte *buffer, size_t bufSize)
-	{
-		if (bufSize < (sizeof(ipaddr) + sizeof(port)))
-			throw AddressException("buffer size to small");
-		memcpy((void *) &buffer[0], &this->ipaddr, sizeof(unsigned int));
-		memcpy(&buffer[4], &this->port, sizeof(unsigned short));
-		return sizeof(ipaddr) + sizeof(port);
-	}
-
-	void readFromNetworkBuffer(byte *buffer, size_t bufSize)
-	{
-		if (bufSize < (sizeof(ipaddr) + sizeof(port)))
-			throw AddressException("buffer is too small");
-		unsigned int addr = 0;
-		unsigned short port = 0;
-
-		memcpy(&addr, &buffer[0], sizeof(unsigned int));
-		memcpy(&port, &buffer[4], sizeof(unsigned short));
-
-		this->ipaddr = addr;
-		this->port = port;
-	}
-
 protected:
 	unsigned int 	ipaddr;
 	unsigned short	port;

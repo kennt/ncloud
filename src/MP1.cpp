@@ -9,35 +9,9 @@ unique_ptr<RawMessage> JoinRequestMessage::toRawMessage()
 	Json::Value 	root;
 	root["msgtype"] = msgtype;
 	root["address"] = fromAddress.toString();
+	root["heartbeat"] = (Json::Int64) heartbeat;
 
 	return rawMessageFromJson(fromAddress, toAddress, root);
-}
-
-unique_ptr<RawMessage> rawMessageFromJson(const Address &fromAddress,
-										  const Address &toAddress,
-										  Json::Value root)
-{
-	Json::FastWriter writer;
-	string data = writer.write(root);
-
-	auto raw = make_unique<RawMessage>();
-	unique_ptr<unsigned char[]> temp(new unsigned char[data.length()]);
-	memcpy(temp.get(), data.data(), data.length());
-
-	raw->fromAddress = fromAddress;
-	raw->toAddress = toAddress;
-	raw->size = data.length();
-	raw->data = std::move(temp);
-
-	return raw;
-}
-
-Json::Value jsonFromRawMessage(const RawMessage *raw)
-{
-	Json::Value root;
-	istringstream is((const char *) raw->data.get(), raw->size);
-	is >> root;
-	return root;	
 }
 
 void MP1MessageHandler::start(const Address &joinAddress)
@@ -59,11 +33,22 @@ void MP1MessageHandler::onMessageReceived(const RawMessage *raw)
 	Json::Value root = jsonFromRawMessage(raw);
 
 	MEMBER_MSGTYPE msgtype = static_cast<MEMBER_MSGTYPE>(root.get("msgtype", 0).asInt());
+	auto node = netnode.lock();
+	auto conn = node->getConnection(NetworkNode::ConnectionType::MEMBER);
 
 	switch(msgtype) {
-		case MEMBER_MSGTYPE::JOINREQ:
-			DEBUG_LOG(log, raw->toAddress, "JOINREQ received from %s", 
-				raw->fromAddress.toString().c_str());
+		case MEMBER_MSGTYPE::JOINREQ: {
+				DEBUG_LOG(log, raw->toAddress, "JOINREQ received from %s", 
+					raw->fromAddress.toString().c_str());	
+
+				string saddr = root.get("address", "").asString();
+				Address addr;
+				addr.parse(saddr);
+				long hb = root.get("heartbeat", 0).asInt64();
+				node->member.addToMemberList(addr, par->getCurrtime(), hb);	
+
+				log->logNodeAdd(conn->address(), addr);
+			}
 			break;
 		//
 		//$ CODE:  Your code goes here (to handle the other messagess)
@@ -109,7 +94,7 @@ void MP1MessageHandler::joinGroup(const Address & joinAddress)
 	}
 	else {
 		// Send a JOINREQ to the coordinator	
-		JoinRequestMessage 	joinReq(conn->address(), joinAddress);
+		JoinRequestMessage 	joinReq(conn->address(), joinAddress, node->member.heartbeat);
 		auto raw = joinReq.toRawMessage();
 
 		DEBUG_LOG(log, conn->address(), "Trying to join...");
