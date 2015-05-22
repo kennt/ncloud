@@ -1,6 +1,16 @@
+/*****
+ * SimNetwork.h
+ *
+ * See LICENSE for details.
+ *
+ * Concrete implementation of the Network Intefaces.
+ * This simulates a network. Messages sent to other interfaces
+ * are queued internally.
+ *
+ *****/
 
-#ifndef _SIMNETWORK_H
-#define _SIMNETWORK_H
+#ifndef NCLOUD_SIMNETWORK_H
+#define NCLOUD_SIMNETWORK_H
 
 #include "Params.h"
 #include "Network.h"
@@ -136,4 +146,4 @@ protected:
 };
 
 
-#endif  /* _SIMNETWORK_H */
+#endif  /* NCLOUD_SIMNETWORK_H */

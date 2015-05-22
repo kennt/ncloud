@@ -16,7 +16,7 @@ unique_ptr<RawMessage> rawMessageFromJson(const Address &fromAddress,
 	string data = writer.write(root);
 
 	auto raw = make_unique<RawMessage>();
-	unique_ptr<unsigned char[]> temp(new unsigned char[data.length()]);
+	unique_ptr<byte[]> temp(new byte[data.length()]);
 	memcpy(temp.get(), data.data(), data.length());
 
 	raw->fromAddress = fromAddress;

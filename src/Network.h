@@ -1,36 +1,46 @@
-/**********************************
- * FILE NAME: Address,h
+/*****
+ * Network.h
  *
- * DESCRIPTION: Definition of a network address.
- **********************************/
+ * See LICENSE for details.
+ *
+ * This file contains the network interfaces. These are the
+ * abstract base classes that isolate the idea of a network.
+ *
+ *****/
 
-#ifndef _NETWORK_H
-#define _NETWORK_H
+#ifndef NCLOUD_NETWORK_H
+#define NCLOUD_NETWORK_H
 
 #include "Util.h"
 
 using namespace std;
 
+// A NetworkID is a combination of an IP address and a port.
 using NetworkID = long long;
 using byte = unsigned char;
 
+
+// This exception is thrown by the Address class
+// when a problem is found when parsing a string to 
+// extract the IP address and port.
+//
 class AddressException : public exception
 {
 public:
 	AddressException(const char *description)
-	{
-		desc = description;
-	}
+	{	desc = description; }
 
 	virtual const char * what() const throw()
-	{
-		return desc.c_str();
-	}
+	{	return desc.c_str(); }
 
 protected:
 	string 	desc;
 };
 
+// Class used for general networking-related
+// errors. Mainly used to indicate that a network
+// operation could not be performed.
+//
 class NetworkException : public exception
 {
 public:
@@ -62,7 +72,11 @@ protected:
 };
 
 
-inline int makeIPAddress(int a, int b, int c, int d)
+// Creates a 32-bit unsigned int that contains an IP-address.
+// Takes the four separate octets and combines them into a
+// single unsigned int.
+//
+inline unsigned int makeIPAddress(int a, int b, int c, int d)
 {
 	return ((a & 0xFF) << 24) +
 			((b & 0xFF) << 16) +
@@ -70,19 +84,20 @@ inline int makeIPAddress(int a, int b, int c, int d)
 			(d & 0xFF);
 }
 
+
+// This class represents the idea of a Network Address.  It is
+// a combination of an IP-address and a port.
+//
 class Address
 {
 public:
-	Address()
+	Address() : ipaddr(0), port(0)
 	{
-		this->ipaddr = 0;
-		this->port = 0;
 	}
 
 	Address(unsigned int ipaddr, unsigned short port)
+		: ipaddr(ipaddr), port(port)
 	{
-		this->ipaddr = ipaddr;
-		this->port = port;
 	}
 
 	Address(int a, int b, int c, int d, unsigned short port)
@@ -167,12 +182,15 @@ protected:
 	unsigned short	port;
 };
 
+
 inline ostream& operator<<(ostream& os, const Address& address)
 {
 	os << address.toString();
 	return os;
 }
 
+// RawMessage is used for both sending/receiving.  This is
+// what gets passed to and from the interfaces.
 struct RawMessage
 {
 	Address 		fromAddress;	// ignored on send()
@@ -181,9 +199,8 @@ struct RawMessage
 	unique_ptr<byte[]>	data;
 
 	RawMessage()
-	{
-		size = 0;
-	}
+		: size(0)
+	{}
 };
 
 
@@ -215,4 +232,4 @@ public:
 	virtual void remove(const Address& address) = 0;
 };
 
-#endif /* _NETWORK_H */
+#endif /* NCLOUD_NETWORK_H */

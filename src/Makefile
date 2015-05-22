@@ -11,7 +11,16 @@ CFLAGS =  -Wall -g -std=c++11 -D DEBUG
 
 all: Application
 
-Application: SimNetwork.o
+Application: Log.o \
+		Util.o \
+		SimNetwork.o \
+		Params.o \
+		NetworkNode.o \
+		MP1App.o \
+		MP1.o \
+		jsoncpp.o \
+		Member.o
+	g++ -o Application MP1App.o Log.o Util.o SimNetwork.o Params.o NetworkNode.o MP1.o jsoncpp.o Member.o ${CFLAGS}
 
 test: TestMain.o \
 		TestNetwork.o \
@@ -29,16 +38,18 @@ Log.o: Log.cpp \
 	g++ -c Log.cpp ${CFLAGS}
 
 Params.o: Params.cpp \
-		Params.h
+		Params.h \
+		Util.h
 	g++ -c Params.cpp ${CFLAGS}
 
 SimNetwork.o: SimNetwork.cpp \
 		SimNetwork.h \
 		Network.h \
-		Params.h
+		Params.h \
+		SparseMatrix.h
 	g++ -c SimNetwork.cpp ${CFLAGS}
 
-Util.o: Util.cpp Util.h
+Util.o: Util.cpp Util.h Network.h
 	g++ -c Util.cpp ${CFLAGS}
 
 TestMain.o: TestMain.cpp
@@ -54,84 +65,42 @@ TestNetwork.o: TestNetwork.cpp \
 	g++ -c TestNetwork.cpp ${CFLAGS}
 
 NetworkNode.o: NetworkNode.cpp \
+		NetworkNode.h \
 		stdincludes.h \
 		Log.h \
 		Params.h \
 		Member.h \
-		NetworkNode.h
+		Util.h
 	g++ -c NetworkNode.cpp ${CFLAGS}
 
 MP1App.o: MP1App.cpp \
+		MP1App.h \
 		stdincludes.h \
+		Network.h \
+		SimNetwork.h \
 		Log.h \
 		Params.h \
 		NetworkNode.h \
 		Member.h \
-		MP1App.h
+		MP1.h
 	g++ -c MP1App.cpp ${CFLAGS}
 
 MP1.o:  MP1.cpp \
+		MP1.h \
 		stdincludes.h \
 		Log.h \
 		Params.h \
-		NetworkNode.h \
-		MP1.h
+		NetworkNode.h
 	g++ -c MP1.cpp ${CFLAGS}
 
 jsoncpp.o: jsoncpp.cpp
 	g++ -c jsoncpp.cpp ${CFLAGS}
 
 Member.o: Member.cpp \
+		Member.h \
 		Network.h \
 		NetworkNode.h
 	g++ -c Member.cpp ${CFLAGS}
 
-Application: Log.o \
-		Util.o \
-		SimNetwork.o \
-		Params.o \
-		NetworkNode.o \
-		MP1App.o \
-		MP1.o \
-		jsoncpp.o \
-		Member.o
-	g++ -o Application MP1App.o Log.o Util.o SimNetwork.o Params.o NetworkNode.o MP1.o jsoncpp.o Member.o ${CFLAGS}
-
-#MP1Node.o: MP1Node.cpp MP1Node.h Log.h Params.h Member.h EmulNet.h Queue.h
-#	g++ -c MP1Node.cpp ${CFLAGS}
-#
-#EmulNet.o: EmulNet.cpp EmulNet.h Params.h Member.h
-#	g++ -c EmulNet.cpp ${CFLAGS}
-#
-#Application.o: Application.cpp Application.h Member.h Log.h Params.h Member.h EmulNet.h Queue.h MP2Node.h
-#	g++ -c Application.cpp ${CFLAGS}
-#
-#Log.o: Log.cpp Log.h Params.h Member.h
-#	g++ -c Log.cpp ${CFLAGS}
-#
-#Params.o: Params.cpp Params.h 
-#	g++ -c Params.cpp ${CFLAGS}
-#
-#Member.o: Member.cpp Member.h
-#	g++ -c Member.cpp ${CFLAGS}
-#
-#Trace.o: Trace.cpp Trace.h
-#	g++ -c Trace.cpp ${CFLAGS}
-#
-#MP2Node.o: MP2Node.cpp MP2Node.h EmulNet.h Params.h Member.h Trace.h Node.h HashTable.h Log.h Params.h Message.h
-#	g++ -c MP2Node.cpp ${CFLAGS}
-#
-#Node.o: Node.cpp Node.h Member.h
-#	g++ -c Node.cpp ${CFLAGS}
-#
-#HashTable.o: HashTable.cpp HashTable.h common.h Entry.h
-#	g++ -c HashTable.cpp ${CFLAGS}
-#
-#Entry.o: Entry.cpp Entry.h Message.h
-#	g++ -c Entry.cpp ${CFLAGS}
-#
-#Message.o: Message.cpp Message.h Member.h common.h
-#	g++ -c Message.cpp ${CFLAGS}
-#
 clean:
 	rm -rf *.o Application dbg.log msgcount.log stats.log machine.log

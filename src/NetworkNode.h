@@ -1,6 +1,6 @@
 
-#ifndef _NETWORKNODE_H
-#define _NETWORKNODE_H
+#ifndef NCLOUD_NETWORKNODE_H
+#define NCLOUD_NETWORKNODE_H
 
 #include "stdincludes.h"	
 #include "Params.h"
@@ -80,4 +80,4 @@ protected:
 	int 				timeout;
 };
 
-#endif /* _NETWORKNODE_H */
+#endif /* NCLOUD_NETWORKNODE_H */

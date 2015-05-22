@@ -4,8 +4,8 @@
  * DESCRIPTION: standard header file
  **********************************/
 
-#ifndef _STDINCLUDES_H_
-#define _STDINCLUDES_H_
+#ifndef NCLOUD_STDINCLUDES_H_
+#define NCLOUD_STDINCLUDES_H_
 
 /*
  * Macros
@@ -45,4 +45,4 @@ using namespace std;
 #define STDCLLBKRET	void
 #define DEBUGLOG 1
 		
-#endif	/* _STDINCLUDES_H_ */
+#endif	/* NCLOUD_STDINCLUDES_H_ */

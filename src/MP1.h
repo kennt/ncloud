@@ -1,6 +1,6 @@
 
-#ifndef _MP1NODE_H
-#define _MP1NODE_H
+#ifndef NCLOUD_MP1NODE_H
+#define NCLOUD_MP1NODE_H
 
 #include "stdincludes.h"
 #include "Log.h"
@@ -82,5 +82,5 @@ protected:
 };
 
 
-#endif /* _MP1NODE_H */
+#endif /* NCLOUD_MP1NODE_H */
 

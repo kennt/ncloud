@@ -1,6 +1,6 @@
 
-#ifndef _UTIL_H
-#define _UTIL_H
+#ifndef NCLOUD_UTIL_H
+#define NCLOUD_UTIL_H
 
 #include "stdincludes.h"
 #include "json/json.h"
@@ -64,4 +64,4 @@ std::unique_ptr<RawMessage> rawMessageFromJson(const Address &fromAddress,
                                                Json::Value root);
 Json::Value jsonFromRawMessage(const RawMessage *raw);
 
-#endif  /* _UTIL_H */
+#endif  /* NCLOUD_UTIL_H */

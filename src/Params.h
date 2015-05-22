@@ -4,8 +4,8 @@
  * DESCRIPTION: Header file of Parameter class
  **********************************/
 
-#ifndef _PARAMS_H_
-#define _PARAMS_H_
+#ifndef NCLOUD_PARAMS_H_
+#define NCLOUD_PARAMS_H_
 
 #include "stdincludes.h"
 #include "Params.h"
@@ -59,4 +59,4 @@ protected:
 };
 
 
-#endif /* _PARAMS_H_ */
+#endif /* NCLOUD_PARAMS_H_ */

@@ -1,6 +1,6 @@
 
-#ifndef _MEMBER_H
-#define _MEMBER_H
+#ifndef NCLOUD_MEMBER_H
+#define NCLOUD_MEMBER_H
 
 #include "stdincludes.h"
 #include "Network.h"
@@ -32,4 +32,4 @@ public:
 
 
 
-#endif /* _MEMBER_H */
+#endif /* NCLOUD_MEMBER_H */

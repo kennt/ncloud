@@ -1,4 +1,7 @@
 
+#ifndef NCLOUD_MP1APP_H
+#define NCLOUD_MP1APP_H
+
 #include "stdincludes.h"
 #include "Network.h"
 #include "SimNetwork.h"
@@ -6,9 +9,6 @@
 #include "Params.h"
 #include "NetworkNode.h"
 
-
-#ifndef _MP1APP_H
-#define _MP1APP_H
 
 const int	ARGS_COUNT = 2;
 const int	TOTAL_RUNNING_TIME = 700;
@@ -40,4 +40,4 @@ protected:
 	Address 				joinAddress;
 };
 
-#endif /* _MP1APP_H */
+#endif /* NCLOUD_MP1APP_H */

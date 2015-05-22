@@ -1,10 +1,9 @@
+#ifndef NCLOUD_LOG_H
+#define NCLOUD_LOG_H
+
 #include "stdincludes.h"
 #include "Params.h"
 #include "Network.h"
-
-#ifndef _LOG_H
-#define _LOG_H
-
 
 const int 	 MAX_WRITES = 1;
 const string MAGIC_NUMBER = "CS425";
@@ -47,4 +46,4 @@ protected:
 #endif
 
 
-#endif 	/* _LOG_H */
+#endif 	/* NCLOUD_LOG_H */
