@@ -112,26 +112,15 @@ public:
 		this->port = (id & 0xFFFF);
 	}
 
-	bool operator ==(const Address &other) const
-	{
-		return (this->ipaddr == other.ipaddr &&
-				this->port == other.port);
-	}
-
-	bool operator<(const Address &other) const
-	{
-		if (this->ipaddr < other.ipaddr)
-			return true;
-		else if (this->ipaddr > other.ipaddr)
-			return false;
-		else
-			return this->port < other.port;
-	}
-
 	// property accessors
 	unsigned int getIPAddress() const
 	{
 		return ipaddr;
+	}
+
+	unsigned char getIPOctet(int pos) const
+	{
+		return (this->ipaddr >> ((3 - pos)*8)) & 0xFF;
 	}
 
 	unsigned short getPort() const
@@ -182,6 +171,20 @@ protected:
 	unsigned short	port;
 };
 
+inline bool operator< (const Address& lhs, const Address& rhs)
+{
+	return lhs.getNetworkID() < rhs.getNetworkID();
+}
+
+inline bool operator== (const Address& lhs, const Address& rhs)
+{
+	return lhs.getNetworkID() == rhs.getNetworkID();
+}
+
+inline bool operator!= (const Address& lhs, const Address& rhs)
+{
+	return !(lhs == rhs);
+}
 
 inline ostream& operator<<(ostream& os, const Address& address)
 {

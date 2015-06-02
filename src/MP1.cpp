@@ -14,22 +14,29 @@ unique_ptr<RawMessage> JoinRequestMessage::toRawMessage(const Address &from,
 														const Address &to)
 {
 	//$ TODO: Check to see that we have all the data we need
-	Json::Value 	root;
-	root["msgtype"] = MEMBER_MSGTYPE::JOINREQ;
-	root["addr"] = this->address.toString();
-	root["hb"] = (Json::Int64) this->heartbeat;
+	stringstream 	ss;
 
-	return rawMessageFromJson(from, to, root);
+	write_raw<int>(ss, static_cast<int>(MEMBER_MSGTYPE::JOINREQ));
+	write_raw<int>(ss, this->address.getIPAddress());
+	write_raw<short>(ss, this->address.getPort());
+	write_raw<long>(ss, this->heartbeat);
+
+	return rawMessageFromStream(from, to, ss);
 }
 
-void JoinRequestMessage::loadFromRawMessage(const RawMessage *raw)
+void JoinRequestMessage::load(istringstream &ss)
 {
-	Json::Value root = jsonFromRawMessage(raw);
+	int 	msgtype = read_raw<int>(ss);
+	if (msgtype != MEMBER_MSGTYPE::JOINREQ)
+		throw NetworkException("incorrect message type");
 
-	Address addr;
-	addr.parse(root.get("addr", "").asString());
+	int 	ipaddr = read_raw<int>(ss);
+	short 	port = read_raw<short>(ss);
+	long 	hb = read_raw<long>(ss);
+
+	Address addr(ipaddr, port);
 	this->address = addr;
-	this->heartbeat = root.get("hb", 0).asInt64();
+	this->heartbeat = hb;
 }
 
 void MP1MessageHandler::start(const Address &joinAddress)
@@ -52,16 +59,18 @@ void MP1MessageHandler::onMessageReceived(const RawMessage *raw)
 	if (!node)
 		throw AppException("Network has been deleted");
 
-	Json::Value root = jsonFromRawMessage(raw);
+	istringstream ss(std::string((const char *)raw->data.get(), raw->size));
 
-	MEMBER_MSGTYPE msgtype = static_cast<MEMBER_MSGTYPE>(root.get("msgtype", 0).asInt());
+	MEMBER_MSGTYPE msgtype = static_cast<MEMBER_MSGTYPE>(read_raw<int>(ss));
+	ss.seekg(0, ss.beg);	// reset to start of the buffer
+
 	switch(msgtype) {
 		case MEMBER_MSGTYPE::JOINREQ: {
 				DEBUG_LOG(log, raw->toAddress, "JOINREQ received from %s", 
 					raw->fromAddress.toString().c_str());	
 
 				JoinRequestMessage joinReq;
-				joinReq.loadFromRawMessage(raw);
+				joinReq.load(ss);
 
 				node->member.addToMemberList(joinReq.address,
 											 par->getCurrtime(),

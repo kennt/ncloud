@@ -34,7 +34,7 @@ struct JoinRequestMessage
 	JoinRequestMessage() : heartbeat(0)
 	{}
 
-	void loadFromRawMessage(const RawMessage *);
+	void load(istringstream& ss);
 	unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);
 };
 

@@ -62,4 +62,28 @@ std::unique_ptr<RawMessage> rawMessageFromJson(const Address &fromAddress,
                                                Json::Value root);
 Json::Value jsonFromRawMessage(const RawMessage *raw);
 
+std::unique_ptr<RawMessage> rawMessageFromStream(const Address &from,
+                                                 const Address &to,
+                                                 stringstream &os);
+
+template<class T>
+void write_raw(std::ostream& os, const T& value)
+{
+    os.write(reinterpret_cast<const char *>(&value), sizeof(value));
+}
+
+template<class T>
+void read_raw(std::istream& stream, T& value)
+{
+    stream.read(reinterpret_cast<char *>(&value), sizeof(value));
+}
+
+template<class T>
+T read_raw(std::istream& stream)
+{
+    T value;
+    read_raw(stream, value);
+    return value;
+}
+
 #endif  /* NCLOUD_UTIL_H */

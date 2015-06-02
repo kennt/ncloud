@@ -36,3 +36,21 @@ Json::Value jsonFromRawMessage(const RawMessage *raw)
 	return root;	
 }
 
+unique_ptr<RawMessage> rawMessageFromStream(const Address &from,
+											const Address &to,
+											stringstream &stream)
+{
+	auto raw = make_unique<RawMessage>();
+
+	size_t dataSize = stream.tellp();
+	const char * data = stream.str().c_str();
+	unique_ptr<byte[]> temp(new byte[dataSize]);
+	memcpy(temp.get(), data, dataSize);
+
+	raw->fromAddress = from;
+	raw->toAddress = to;
+	raw->size = dataSize;
+	raw->data = std::move(temp);
+
+	return raw;
+}

@@ -57,3 +57,26 @@ TEST_CASE("Address hash code / Network ID", "[Address]")
 	Address 	addr(0x64656667, 0xabcd);
 	REQUIRE( addr.getNetworkID() == 0x64656667abcd );
 }
+
+TEST_CASE("Address comparison operators", "[Address]")
+{
+	Address 	addr1(0x64656667, 0xabcd);
+	Address 	addr2(0x64656667, 0xabcd);	// same as addr1
+	Address 	addr3(0x64656677, 0xabcd);	
+	Address 	addr4(0x64656667, 0x0000);
+
+	REQUIRE( addr1 == addr2 );
+	REQUIRE( addr1 != addr3 );
+	REQUIRE( addr1 != addr4 );
+	REQUIRE( addr1 < addr3 );
+	REQUIRE( addr4 < addr1 );
+}
+
+TEST_CASE("Address octet access", "[Address]")
+{
+	Address 	addr(0x64656667, 0xabcd);
+	REQUIRE( addr.getIPOctet(0) == 100 );
+	REQUIRE( addr.getIPOctet(1) == 101 );
+	REQUIRE( addr.getIPOctet(2) == 102 );
+	REQUIRE( addr.getIPOctet(3) == 103 );	
+}
