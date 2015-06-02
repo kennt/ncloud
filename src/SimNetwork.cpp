@@ -195,6 +195,7 @@ void SimNetwork::send(IConnection *conn, shared_ptr<SimMessage> message)
 	// to the destination's queue).
 	it->second.messages.emplace_back(message);
 
+	// update the statistics
 	sent(conn->address().getNetworkID(), par->getCurrtime()) ++;
 }
 
@@ -214,7 +215,9 @@ shared_ptr<SimMessage> SimNetwork::recv(IConnection *conn)
 	shared_ptr<SimMessage> message = it->second.messages.front();
 	it->second.messages.pop_front();
 
+	// update the statistics
 	received(conn->address().getNetworkID(), par->getCurrtime()) ++;
+
 	return message;
 }
 

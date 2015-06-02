@@ -5,7 +5,16 @@
  *
  * Concrete implementation of the Network Intefaces.
  * This simulates a network. Messages sent to other interfaces
- * are queued internally.
+ * are stored in queues internally.
+ *
+ * SimConnection
+ *	Simulated connection interface.
+ *
+ * SimMessage
+ *	Internal message class for the Simulated Network.
+ *
+ * SimNetwork
+ *	Factory interface for the simlated network.
  *
  *****/
 
@@ -17,6 +26,7 @@
 #include "SparseMatrix.h"
 
 
+// Maximum size of an individual message
 const int MAX_BUFFER_SIZE = 16*1024;
 
 class SimNetwork;
@@ -27,6 +37,7 @@ public:
 	SimConnection(Params *par, weak_ptr<SimNetwork> simnet);
 	virtual ~SimConnection();
 
+	// Copying not allowed
 	SimConnection(const SimConnection &) = delete;
 	SimConnection &operator= (const SimConnection &) = delete;
 
@@ -90,7 +101,8 @@ public:
 	virtual shared_ptr<IConnection> find(const Address &address) override;
 	virtual void remove(const Address &address) override;
 
-
+	// Retrieves the next available message ID.  This is an internal ID within
+	// the simulated network.
 	int 	getNextMessageID() { return nextMessageID++; }
 
 	// These are the internal APIS to the actual simulated network
@@ -114,6 +126,7 @@ public:
 		this->nextMessageID = 1;
 	}
 
+	// Statisical counts of msgs sent/recevied by this network
 	int getSentCount(NetworkID netID, int time)
 	{	return sent(netID, time); }
 

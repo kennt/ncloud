@@ -10,6 +10,12 @@
 #include "NetworkNode.h"
 #include "json/json.h"
 
+
+// Converts the data in a JoinRequestMessage structure into a RawMessage (which
+// is ready to be sent over the wire).
+//
+// The pointer returned is a unique_ptr<> and should be freed by the caller.
+//
 unique_ptr<RawMessage> JoinRequestMessage::toRawMessage(const Address &from,
 														const Address &to)
 {
@@ -24,6 +30,10 @@ unique_ptr<RawMessage> JoinRequestMessage::toRawMessage(const Address &from,
 	return rawMessageFromStream(from, to, ss);
 }
 
+// Loads the streamed binary data from the istringstream into a 
+// JoinRequestMessage.  It is assumed that the stream is at the head
+// of the message.
+//
 void JoinRequestMessage::load(istringstream &ss)
 {
 	int 	msgtype = read_raw<int>(ss);
@@ -39,6 +49,9 @@ void JoinRequestMessage::load(istringstream &ss)
 	this->heartbeat = hb;
 }
 
+// Initializes the message handler.  Call this before any calls to
+// onMessageReceived() or onTimeout().  Or if the connection has been reset.
+//
 void MP1MessageHandler::start(const Address &joinAddress)
 {
 	auto node = netnode.lock();
@@ -53,6 +66,11 @@ void MP1MessageHandler::start(const Address &joinAddress)
 	joinGroup(joinAddress);
 }
 
+// This is a callback and is called when the connection has received
+// a message.
+//
+// The RawMessage will not be changed with.
+//
 void MP1MessageHandler::onMessageReceived(const RawMessage *raw)
 {
 	auto node = netnode.lock();
@@ -91,6 +109,10 @@ void MP1MessageHandler::onMessageReceived(const RawMessage *raw)
 	}
 }
 
+// This is called when there are no messages available (usually on a
+// connection timeout).  Thus perform any actions that should be done
+// on idle here.
+//
 void MP1MessageHandler::onTimeout()
 {
 	// run the node maintenance loop
@@ -108,6 +130,10 @@ void MP1MessageHandler::onTimeout()
 	//
 }
 
+// Joins the node to the current group.  The action performed is
+// different depending on whether or not this node is the coordinator
+// node or not.
+//
 void MP1MessageHandler::joinGroup(const Address & joinAddress)
 {
 	auto node = netnode.lock();

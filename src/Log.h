@@ -3,6 +3,10 @@
  *
  * See LICENSE for details.
  *
+ * Implements a log class that will log to dbg.log.  There are special
+ * functions to log specific operations (such as when a node is added or
+ * removed).  This is necessary for the grader.
+ *
  *****/
 
 
@@ -13,10 +17,13 @@
 #include "Params.h"
 #include "Network.h"
 
+// Number of writes before the log is flushed to the disk.
 const int 	 MAX_WRITES = 1;
-const string DBG_LOG = "dbg.log";
-const string STATS_LOG = "stats.log";
 
+const string DBG_LOG = "dbg.log";
+
+// See comment at the top of the file for details.
+//
 class Log
 {
 public:
@@ -37,11 +44,12 @@ protected:
 	bool	firstTime = true;
 
 	FILE *	fpDebug = nullptr;
-	FILE *	fpStats = nullptr;
 	int 	numWrites = 0;
 };
 
 
+// Provide for debug output.  This helps to avoid having ifdef guards around
+// debug output.
 #ifdef DEBUG
 
 	#define DEBUG_LOG(log, address, msg, ...) log->log(address, msg, ##__VA_ARGS__)

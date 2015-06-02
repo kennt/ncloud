@@ -3,6 +3,8 @@
  *
  * See LICENSE for details.
  *
+ * The SparseMatrix class implements a sparse matrix which is mainly used to
+ * store send/receive counts for each connection (which will be sparse).
  *
  *****/
 

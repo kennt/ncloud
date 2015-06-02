@@ -85,7 +85,7 @@ void NetworkNode::receiveMessages()
 		auto raw = info.second.connection->recv(timeout);
 		while (raw != nullptr) {
 			info.second.queue->push_back(std::move(raw));
-			raw = info.second.connection->recv(timeout);
+			raw = info.second.connection->recv(0);
 		}
 	}
 }

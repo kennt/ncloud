@@ -9,8 +9,8 @@
 #include "Util.h"
 #include "Network.h"
 
-unique_ptr<RawMessage> rawMessageFromJson(const Address &fromAddress,
-										  const Address &toAddress,
+unique_ptr<RawMessage> rawMessageFromJson(const Address &from,
+										  const Address &to,
 										  Json::Value root)
 {
 	Json::FastWriter writer;
@@ -20,8 +20,8 @@ unique_ptr<RawMessage> rawMessageFromJson(const Address &fromAddress,
 	unique_ptr<byte[]> temp(new byte[data.length()]);
 	memcpy(temp.get(), data.data(), data.length());
 
-	raw->fromAddress = fromAddress;
-	raw->toAddress = toAddress;
+	raw->fromAddress = from;
+	raw->toAddress = to;
 	raw->size = data.length();
 	raw->data = std::move(temp);
 

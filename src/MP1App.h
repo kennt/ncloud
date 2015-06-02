@@ -3,6 +3,8 @@
  *
  * See LICENSE for details.
  *
+ * Contains main().  Also contains Application() which runs the event
+ * loop.
  *
  *****/
 

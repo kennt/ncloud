@@ -91,6 +91,7 @@ void Application::run()
 		fail();
 	}
 
+	// dump statistics
 	simnetwork->writeMsgcountLog(MEMBER_PROTOCOL_PORT);
 
 	// clean everything out

@@ -6,6 +6,25 @@
  * This file contains the network interfaces. These are the
  * abstract base classes that isolate the idea of a network.
  *
+ * AddressException
+ *	Errors when dealing with parsing IP address strings.
+ *
+ * NetworkException
+ *	Errors with using the network (not initialized, etc...).
+ *
+ * Address
+ *	Encapsulates an IPv4 address and a port.
+ *
+ * RawMessage
+ *	Represents a raw message that has been received (contains the
+ *	binary data).  Used for both receiving and sending.
+ *
+ * IConnection
+ *	Abstract idea of a network connection.
+ *
+ * INetwork
+ *	Abstract network (mainly used as a connection factory).
+ *
  *****/
 
 #ifndef NCLOUD_NETWORK_H
@@ -118,6 +137,10 @@ public:
 		return ipaddr;
 	}
 
+	// Retrieves the individual octet of an IP address.  The
+	// 0th octet are the highest order bits. The pos is [0..3].
+	// Asking for a pos outside of [0..3] is undefined.
+	//
 	unsigned char getIPOctet(int pos) const
 	{
 		return (this->ipaddr >> ((3 - pos)*8)) & 0xFF;
@@ -144,6 +167,11 @@ public:
 		return (((unsigned long long )ipaddr) << 16) + port;
 	}
 
+	// Parses a IPv4 address of the form "XXX.XXX.XXX.XXX:YYY" where XXX
+	// is an octet (from 0..255) and YYY is a port number.
+	//
+	// This function does a minimal amount of error checking.
+	//
 	void parse(string address)
 	{
 		size_t	pos = address.find(":");
@@ -194,6 +222,7 @@ inline ostream& operator<<(ostream& os, const Address& address)
 
 // RawMessage is used for both sending/receiving.  This is
 // what gets passed to and from the interfaces.
+//
 struct RawMessage
 {
 	Address 		fromAddress;	// ignored on send()
@@ -214,6 +243,8 @@ public:
 
 	virtual ~IConnection() {};
 
+	// Returns the address associated with this connection.
+	//
 	virtual const Address &address() = 0;
 
 	virtual Status getStatus() = 0;
@@ -230,8 +261,13 @@ class INetwork
 public:
 	virtual ~INetwork() {};
 
+	// creates a connection for a given address.  Only one connection
+	// per address is allowed at any given time.
 	virtual shared_ptr<IConnection> create(const Address &address) = 0;
+
+	// Looks up the connection for an address.
 	virtual shared_ptr<IConnection> find(const Address& address) = 0;
+
 	virtual void remove(const Address& address) = 0;
 };
 

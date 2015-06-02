@@ -3,6 +3,13 @@
  *
  * See LICENSE for details.
  *
+ * Holds the classes needed to receive and handle messages for the 
+ * Membership protocol.
+ *
+ * JoinRequestMessage represents a JoinRequest message.
+ * MP1MessageHandler is called when a message is available (or if there
+ * is a timeout, i.e. on idle).
+ *
  *****/
 
 
@@ -25,6 +32,8 @@ enum MEMBER_MSGTYPE { NONE=0, JOINREQ };
 class NetworkNode;
 
 
+// See comment above.
+//
 struct JoinRequestMessage
 {
 	// Implied MEMBER_MSGTYPE::JOINREQ
@@ -39,6 +48,8 @@ struct JoinRequestMessage
 };
 
 
+// See comment above
+//
 class MP1MessageHandler: public IMessageHandler
 {
 public:
@@ -52,10 +63,18 @@ public:
 
 	virtual ~MP1MessageHandler() {}
 
-	virtual void start(const Address &address) override;
+	// Initializes the MessageHandler, if needed. This will be called
+	// before onMessageReceived() or onTimeout() will be called.
+	virtual void start(const Address &address) override;	
+
+	// This is called when a message has been received.  This may be
+	// called more than once for a timeslice.
 	virtual void onMessageReceived(const RawMessage *) override;
+
+	// Called when no messages are available (and the connection has timed out).
 	virtual void onTimeout() override;
 
+	// Performs the action to join a group (sending a JoinRequest message).
 	void joinGroup(const Address& address);
 
 protected:

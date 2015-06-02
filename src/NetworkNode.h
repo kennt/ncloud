@@ -3,6 +3,15 @@
  *
  * See LICENSE for details.
  *
+ * Contains the central classes to implement the protocol and a place to store
+ * the membership information.
+ *
+ * IMessageHandler
+ *	An interface to handle messages that arrive on a certain connection.
+ *
+ * NetworkNode
+ *	A placeholder to hold all connections/handlers/info for a particular
+ *	network node (endpoint).
  *
  *****/
 
@@ -50,8 +59,13 @@ public:
 	void nodeStart(const Address &joinAddress, int timeout);
 
 	// This looks for messages by calling recv() on each
-	// connection
+	// connection.  Pull messages off of the net and places them onto
+	// an internal queue.
 	void receiveMessages();
+
+	// Takes messages off the queue and then calls the associated MessageHandler
+	// to process the messages.  And then calls the onTimeout() on the MessageHandler
+	// after all of the queued messages have been processed.
 	void processQueuedMessages();
 
 	string getName()	{ return this->name; }

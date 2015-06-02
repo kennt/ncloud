@@ -57,11 +57,15 @@ protected:
 struct RawMessage;
 class Address;
 
+// Takes a json structure, serializes it, and then returns a RawMessage.
 std::unique_ptr<RawMessage> rawMessageFromJson(const Address &fromAddress,
                                                const Address &toAddress,
                                                Json::Value root);
+
+// Takes a RawMessage, unserializes the message, and creates a Json value.
 Json::Value jsonFromRawMessage(const RawMessage *raw);
 
+// Takes a binary stream, serializes it, and then returns a RawMessage
 std::unique_ptr<RawMessage> rawMessageFromStream(const Address &from,
                                                  const Address &to,
                                                  stringstream &os);
@@ -73,16 +77,16 @@ void write_raw(std::ostream& os, const T& value)
 }
 
 template<class T>
-void read_raw(std::istream& stream, T& value)
+void read_raw(std::istream& is, T& value)
 {
-    stream.read(reinterpret_cast<char *>(&value), sizeof(value));
+    is.read(reinterpret_cast<char *>(&value), sizeof(value));
 }
 
 template<class T>
-T read_raw(std::istream& stream)
+T read_raw(std::istream& is)
 {
     T value;
-    read_raw(stream, value);
+    read_raw(is, value);
     return value;
 }
 

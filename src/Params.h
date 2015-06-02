@@ -3,6 +3,7 @@
  *
  * See LICENSE for details.
  *
+ * The Params class contains any parameters needed to run a simulation.
  *
  *****/
 
