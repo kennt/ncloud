@@ -6,7 +6,8 @@
  * Encapsulate all MP1 related data here (particularly the Membership data).
  * There is a MemberInfo class which is stored in a NetworkNode.  Each MemberInfo
  * class contains a list of Members (each in a MemberListEntry).
- * 
+ *
+ * Place information in here that needs to be accessed/manipulated by MP2.
  *
  *****/
 

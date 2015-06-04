@@ -90,4 +90,7 @@ T read_raw(std::istream& is)
     return value;
 }
 
+void write_chars_raw(std::ostream& os, const char *p, size_t length);
+void read_chars_raw(std::istream& is, char *p, size_t length);
+
 #endif  /* NCLOUD_UTIL_H */

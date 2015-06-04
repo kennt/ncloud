@@ -22,6 +22,7 @@
 #include "Params.h"
 #include "Network.h"
 #include "Member.h"
+#include "Ring.h"
 
 class IMessageHandler
 {
@@ -34,6 +35,10 @@ public:
 	virtual void onTimeout() = 0;
 };
 
+// Describes what the connection is for
+// MP1 : MEMBER
+// MP2 : RING
+enum class ConnectType { MEMBER, RING };
 
 // This class represents a single network node (or a process).
 // This everything that belongs to one machine (or process)
@@ -41,15 +46,11 @@ public:
 class NetworkNode
 {
 public:
-	// Describes what the connection is for
-	// MP1 : MEMBER
-	// MP2 : RING
-	enum class ConnectionType { MEMBER, RING };
 
 	NetworkNode(string name, Log *log, Params *par, shared_ptr<INetwork> network);
 
 	// Contains list of connections to use
-	void registerHandler(ConnectionType conntype,
+	void registerHandler(ConnectType conntype,
 						 shared_ptr<IConnection> connection,
 						 shared_ptr<IMessageHandler> handler);
 	void unregisterHandler(const Address &address);
@@ -70,7 +71,13 @@ public:
 
 	string getName()	{ return this->name; }
 	vector<Address> getAddresses();
-	shared_ptr<IConnection> getConnection(ConnectionType conntype);
+	shared_ptr<IConnection> getConnection(ConnectType conntype);
+
+	inline const Address address(ConnectType conntype)
+	{
+		return this->getConnection(conntype)->address();
+	}
+
 
 	// Has the node failed?  Failure means that the node
 	// no longer sends/receives messages across all connections.
@@ -81,13 +88,14 @@ public:
 	MemberInfo 	member;
 
 	// MP2 stuff
+	RingInfo 	ring;
 	//Node 		node;
 
 protected:
 
 	struct HandlerInfo
 	{
-		ConnectionType 				conntype;
+		ConnectType 				conntype;
 		shared_ptr<IConnection> 	connection;
 		shared_ptr<IMessageHandler>	handler;
 		shared_ptr<list<unique_ptr<RawMessage>>> queue;

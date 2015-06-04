@@ -9,9 +9,9 @@
 
 CFLAGS =  -Wall -g -std=c++11 -D DEBUG
 
-all: Application
+all: mp1
 
-Application: Log.o \
+mp1: Log.o \
 		Util.o \
 		SimNetwork.o \
 		Params.o \
@@ -21,6 +21,20 @@ Application: Log.o \
 		jsoncpp.o \
 		Member.o
 	g++ -o Application MP1App.o Log.o Util.o SimNetwork.o Params.o NetworkNode.o MP1.o jsoncpp.o Member.o ${CFLAGS}
+
+mp2: Log.o \
+		Util.o \
+		SimNetwork.o \
+		Params.o \
+		NetworkNode.o \
+		MP2App.o \
+		MP1.o \
+		MP2.o \
+		jsoncpp.o \
+		Member.o \
+		Ring.o
+	g++ -o Application MP2App.o Log.o Util.o SimNetwork.o Params.o NetworkNode.o MP1.o MP2.o jsoncpp.o Member.o Ring.o ${CFLAGS}
+
 
 test: TestMain.o \
 		TestNetwork.o \
@@ -85,6 +99,20 @@ MP1App.o: MP1App.cpp \
 		MP1.h
 	g++ -c MP1App.cpp ${CFLAGS}
 
+MP2App.o: MP2App.cpp \
+		MP2App.h \
+		stdincludes.h \
+		Network.h \
+		SimNetwork.h \
+		Log.h \
+		Params.h \
+		NetworkNode.h \
+		Member.h \
+		Ring.h \
+		MP1.h \
+		MP2.h
+	g++ -c MP2App.cpp ${CFLAGS}
+
 MP1.o:  MP1.cpp \
 		MP1.h \
 		stdincludes.h \
@@ -92,6 +120,15 @@ MP1.o:  MP1.cpp \
 		Params.h \
 		NetworkNode.h
 	g++ -c MP1.cpp ${CFLAGS}
+
+MP2.o:	MP2.cpp \
+		MP2.h \
+		MP1.h \
+		stdincludes.h \
+		Log.h \
+		Params.h \
+		NetworkNode.h
+	g++ -c MP2.cpp ${CFLAGS}
 
 jsoncpp.o: jsoncpp.cpp
 	g++ -c jsoncpp.cpp ${CFLAGS}
@@ -101,6 +138,12 @@ Member.o: Member.cpp \
 		Network.h \
 		NetworkNode.h
 	g++ -c Member.cpp ${CFLAGS}
+
+Ring.o: Ring.cpp \
+		Ring.h \
+		Network.h \
+		NetworkNode.h
+	g++ -c Ring.cpp ${CFLAGS}
 
 clean:
 	rm -rf *.o Application dbg.log msgcount.log stats.log machine.log

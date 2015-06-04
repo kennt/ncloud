@@ -9,7 +9,7 @@
 #include "NetworkNode.h"
 
 NetworkNode::NetworkNode(string name, Log *log, Params *par, shared_ptr<INetwork> network)
-	: member(log, par)
+	: member(log, par), ring(log, par)
 {
 	this->name = name;
 	this->log = log;
@@ -18,7 +18,7 @@ NetworkNode::NetworkNode(string name, Log *log, Params *par, shared_ptr<INetwork
 	this->hasFailed = false;
 }
 
-void NetworkNode::registerHandler(ConnectionType conntype,
+void NetworkNode::registerHandler(ConnectType conntype,
 								  shared_ptr<IConnection> connection,
 						   		  shared_ptr<IMessageHandler> handler)
 {
@@ -51,7 +51,7 @@ vector<Address> NetworkNode::getAddresses()
 	return v;
 }
 
-shared_ptr<IConnection> NetworkNode::getConnection(ConnectionType conntype)
+shared_ptr<IConnection> NetworkNode::getConnection(ConnectType conntype)
 {
 	for (auto & info : handlers) {
 		if (info.second.conntype == conntype) {

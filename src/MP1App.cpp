@@ -7,7 +7,6 @@
  *****/
 
 #include "MP1App.h"
-#include "MP1.h"
 
 int main(int argc, char *argv[])
 {
@@ -72,7 +71,7 @@ void Application::init(const char *filename)
 		auto connection = network->create(addr);
 		auto mp1handler = make_shared<MP1MessageHandler>(log, par, networknode, connection);
 
-		networknode->registerHandler(NetworkNode::ConnectionType::MEMBER,
+		networknode->registerHandler(ConnectType::MEMBER,
 									 connection, mp1handler);
 
 		nodes.push_back(networknode);
@@ -117,7 +116,7 @@ void Application::mp1Run()
 		if (par->getCurrtime() == (int)(par->stepRate * i)) {
 			node->nodeStart(joinAddress, 0);
 			cout << i << "-th introduced node is using:";
-			auto conn = node->getConnection(NetworkNode::ConnectionType::MEMBER);
+			auto conn = node->getConnection(ConnectType::MEMBER);
 			if (conn != nullptr)
 				cout << " " << conn->address();
             cout << endl;
@@ -145,7 +144,7 @@ void Application::fail()
 	if (par->singleFailure && par->getCurrtime() == 100) {
 		removed = rand() % par->numberOfNodes;
 
-		conn = nodes[removed]->getConnection(NetworkNode::ConnectionType::MEMBER);
+		conn = nodes[removed]->getConnection(ConnectType::MEMBER);
 		DEBUG_LOG(log, conn->address(), "Node failed at time=%d", par->getCurrtime());
 
 		nodes[removed]->fail();
@@ -155,7 +154,7 @@ void Application::fail()
 
 		for (int i = removed; i < removed + par->numberOfNodes/2; i++) {
 
-			conn = nodes[i]->getConnection(NetworkNode::ConnectionType::MEMBER);
+			conn = nodes[i]->getConnection(ConnectType::MEMBER);
 			DEBUG_LOG(log, conn->address(), "Node failed at time=%d", par->getCurrtime());
 
 			nodes[i]->fail();
