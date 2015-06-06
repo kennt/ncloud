@@ -39,6 +39,13 @@ public:
 	void logNodeAdd(const Address &thisNode, const Address &addedNode);
 	void logNodeRemove(const Address &thisNode, const Address &removedNode);
 
+	// success
+	void logCreate(const Address& addr, bool isCoord, bool isSuccess, int transid, string key, string value);
+	void logRead(const Address& addr, bool isCoord, bool isSuccess, int transid, string key, string value);
+	void logUpdate(const Address& addr, bool isCoord, bool isSuccess, int transid, string key, string newValue);
+	void logDelete(const Address& addr, bool isCoord, bool isSuccess, int transid, string key);
+
+
 protected:
 	Params *par = nullptr;
 	bool	firstTime = true;

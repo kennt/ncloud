@@ -65,3 +65,129 @@ void Log::logNodeRemove(const Address &thisAddress, const Address &removedNode)
 	log(thisAddress, stdstring.c_str());
 }
 
+static string sCoordinator("coordinator");
+static string sServer("server");
+static string sSuccess("success");
+static string sFail("fail");
+
+void Log::logCreate(const Address& address,
+					bool isCoord,
+					bool isSuccess,
+					int transid,
+					string key,
+					string value)
+{
+	string 	role;
+	string 	result;
+
+	if (isCoord)
+		role = sCoordinator;
+	else
+		role = sServer;
+
+	if (isSuccess)
+		result = sSuccess;
+	else
+		result = sFail;
+
+	string s;
+	s = string_format("%s: create %s at time %d, transID=%d, key=%s, value=%s",
+			 		  role.c_str(),
+			 		  result.c_str(),
+			  		  par->getCurrtime(),
+			  		  transid,
+			  		  key.c_str(),
+			  		  value.c_str());
+	log(address, s.c_str());
+}
+
+void Log::logRead(const Address& address,
+				  bool isCoord,
+				  bool isSuccess,
+				  int transid,
+				  string key,
+				  string value)
+{
+	string 	role;
+
+	if (isCoord)
+		role = sCoordinator;
+	else
+		role = sServer;
+
+	string s;
+	if (isSuccess)
+		s = string_format("%s: read success at time %d, transID=%d, key=%s, value=%s",
+				 		  role.c_str(),
+				  		  par->getCurrtime(),
+				  		  transid,
+				  		  key.c_str(),
+				  		  value.c_str());
+	else
+		s = string_format("%s: read fail at time %d, transID=%d, key=%s",
+				 		  role.c_str(),
+				  		  par->getCurrtime(),
+				  		  transid,
+				  		  key.c_str());
+	log(address, s.c_str());
+}
+
+void Log::logUpdate(const Address& address,
+					bool isCoord,
+					bool isSuccess,
+					int transid,
+					string key,
+					string value)
+{
+	string 	role;
+	string 	result;
+
+	if (isCoord)
+		role = sCoordinator;
+	else
+		role = sServer;
+
+	if (isSuccess)
+		result = sSuccess;
+	else
+		result = sFail;
+
+	string s;
+	s = string_format("%s: update %s at time %d, transID=%d, key=%s, value=%s",
+			 		  role.c_str(),
+			 		  result.c_str(),
+			  		  par->getCurrtime(),
+			  		  transid,
+			  		  key.c_str(),
+			  		  value.c_str());
+	log(address, s.c_str());
+}
+
+void Log::logDelete(const Address& address,
+					bool isCoord,
+					bool isSuccess,
+					int transid,
+					string key)
+{
+	string 	role;
+	string 	result;
+
+	if (isCoord)
+		role = sCoordinator;
+	else
+		role = sServer;
+
+	if (isSuccess)
+		result = sSuccess;
+	else
+		result = sFail;
+
+	string s;
+	s = string_format("%s: delete %s at time %d, transID=%d, key=%s",
+			 		  role.c_str(),
+			 		  result.c_str(),
+			  		  par->getCurrtime(),
+			  		  transid,
+			  		  key.c_str());
+	log(address, s.c_str());	
+}
