@@ -19,7 +19,6 @@
 #include "stdincludes.h"
 #include "Log.h"
 #include "Params.h"
-#include "json/json.h"
 #include "NetworkNode.h"
 
 
@@ -29,67 +28,28 @@ enum ReplicaType { REPLNONE=-1, PRIMARY=0, SECONDARY, TERTIARY };
 
 class NetworkNode;
 
-
-// See comment above.
-//
-struct CreateMessage
+struct Message
 {
-	// Implied RingMessageType::CREATE
-	string 	key;
-	string	value;
-	ReplicaType replica;
+public:
+	static unique_ptr<Message> Create(int transid, string key, string value, ReplicaType replica);
+	static unique_ptr<Message> Read(int transid, string key);
+	static unique_ptr<Message> Update(int transid, string key, string value, ReplicaType replcia);
+	static unique_ptr<Message> Delete(int transid, string key);
+	static unique_ptr<Message> Reply(int transid, bool success);
+	static unique_ptr<Message> ReadReply(int _transid, string value);
 
 	void load(istringstream& ss);
 	unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);
+
+	RingMessageType type;
+	ReplicaType 	replica;
+	string 			key;
+	string 			value;
+	int 			transid;
+	bool 			success;
+	Address 		to;
+	Address 		from;
 };
-
-struct ReadMessage
-{
-	// Implied RingMessageType::READ
-	string 	key;
-
-	void load(istringstream& ss);
-	unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);
-};
-
-struct UpdateMessage
-{
-	// Implied RingMessageType::UPDATE
-	string 	key;
-	string 	value;
-	ReplicaType replica;
-
-	void load(istringstream& ss);
-	unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);
-};
-
-struct DeleteMessage
-{
-	// Implied RingMessageType::DELETE
-	string 	key;
-
-	void load(istringstream& ss);
-	unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);
-};
-
-struct ReplyMessage
-{
-	// Implied RingMessageType::REPLY
-	bool 	success;
-
-	void load(istringstream& ss);
-	unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);
-};
-
-struct ReadReplyMessage
-{
-	// Implied RingMessageType::READREPLY
-	string 	value;
-
-	void load(istringstream& ss);
-	unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);
-};
-
 
 
 // See comment above

@@ -9,6 +9,136 @@
 #include "MP2.h"
 #include "NetworkNode.h"
 
+ unique_ptr<Message> Message::Create(int transid, string key, string value, ReplicaType replica)
+ {
+ 	auto message = make_unique<Message>();
+ 	message->transid = transid;
+ 	message->type = RingMessageType::CREATE;
+ 	message->key = key;
+ 	message->value = value;
+ 	message->replica = replica;
+ 	return message;
+ }
+
+ unique_ptr<Message> Message::Read(int transid, string key)
+ {
+ 	auto message = make_unique<Message>();
+ 	message->transid = transid;
+ 	message->type = RingMessageType::READ;
+ 	message->key = key;
+ 	return message;
+ }
+
+ unique_ptr<Message> Message::Update(int transid, string key, string value, ReplicaType replica)
+ {
+ 	auto message = make_unique<Message>();
+ 	message->transid = transid;
+ 	message->type = RingMessageType::UPDATE;
+ 	message->key = key;
+ 	message->value = value;
+ 	message->replica = replica;
+ 	return message;
+ }
+
+ unique_ptr<Message> Message::Delete(int transid, string key)
+ {
+ 	auto message = make_unique<Message>();
+ 	message->transid = transid;
+ 	message->type = RingMessageType::DELETE;
+ 	message->key = key;
+ 	return message;
+ }
+
+ unique_ptr<Message> Message::Reply(int transid, bool success)
+ {
+ 	auto message = make_unique<Message>();
+ 	message->transid = transid;
+ 	message->type = RingMessageType::REPLY;
+ 	message->success = success;
+ 	return message;
+ }
+
+ unique_ptr<Message> Message::ReadReply(int transid, string value)
+ {
+ 	auto message = make_unique<Message>();
+ 	message->transid = transid;
+ 	message->type = RingMessageType::READREPLY;
+ 	message->value = value;
+ 	return message;
+ }
+
+void Message::load(istringstream& is)
+{
+	this->type = static_cast<RingMessageType>(read_raw<int>(is));
+	this->transid = read_raw<int>(is);
+
+	switch (this->type) {
+		case RingMessageType::CREATE:
+			this->key = read_raw<string>(is);
+			this->value = read_raw<string>(is);
+			this->replica = static_cast<ReplicaType>(read_raw<int>(is));
+			break;
+		case RingMessageType::READ:
+			this->key = read_raw<string>(is);
+			break;
+		case RingMessageType::UPDATE:
+			this->key = read_raw<string>(is);
+			this->value = read_raw<string>(is);
+			this->replica = static_cast<ReplicaType>(read_raw<int>(is));
+			break;
+		case RingMessageType::DELETE:
+			this->key = read_raw<string>(is);
+			break;
+		case RingMessageType::REPLY:
+			this->success = read_raw<bool>(is);
+			break;
+		case RingMessageType::READREPLY:
+			this->value = read_raw<string>(is);
+			break;
+		default:
+			throw NetworkException("Unknown Ring Message Type");
+			break;
+	}
+}
+
+unique_ptr<RawMessage> Message::toRawMessage(const Address &to, const Address& from)
+{
+	//$ TODO: Check to see that we have all the data we need
+	stringstream 	ss;
+
+	write_raw<int>(ss, static_cast<int>(this->type));
+	write_raw<int>(ss, this->transid);
+
+	switch(this->type) {
+		case RingMessageType::CREATE:
+			write_raw<string>(ss, this->key);
+			write_raw<string>(ss, this->value);
+			write_raw<int>(ss, static_cast<int>(this->replica));
+			break;
+		case RingMessageType::READ:
+			write_raw<string>(ss, this->key);
+			break;
+		case RingMessageType::UPDATE:
+			write_raw<string>(ss, this->key);
+			write_raw<string>(ss, this->value);
+			write_raw<int>(ss, static_cast<int>(this->replica));
+			break;
+		case RingMessageType::DELETE:
+			write_raw<string>(ss, this->key);
+			break;
+		case RingMessageType::REPLY:
+			write_raw<bool>(ss, this->success);
+			break;
+		case RingMessageType::READREPLY:
+			write_raw<string>(ss, this->value);
+			break;
+		default:
+			throw NetworkException("Unknown Ring message type");
+			break;
+	}
+
+	return rawMessageFromStream(from, to, ss);
+}
 
 // Initializes the message handler.  Call this before any calls to
 // onMessageReceived() or onTimeout().  Or if the connection has been reset.
