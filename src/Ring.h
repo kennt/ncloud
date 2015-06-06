@@ -20,19 +20,36 @@
 
 class NetworkNode;
 
+
+struct RingEntry
+{
+	Address 	address;
+	size_t		hashcode;
+};
+
+
 class RingInfo
 {
 public:
 	RingInfo(Log *log, Params *par) :
 		log(log),
 		par(par),
-		inited(false)
+		hashCode(0),
+		node(nullptr)
 	{
 	}
 
 	Log *					log;
 	Params *				par;
-	bool 					inited;
+
+	void init(NetworkNode *node, const Address& address);
+
+	// The hash code for this node, computed using
+	// the full address (ip:port) as key and hashFunction().
+	size_t getHashcode()
+	{ return hashCode; }
+
+	size_t hashFunction(string key);
 
 	// Each node can act as the client for a request.
 	// This is the client side API.
@@ -40,12 +57,25 @@ public:
 	// they will receive the request).
 	//
 	void clientCreate(string key, string value);
-	const string clientRead(string key);
+	void clientRead(string key);
 	void clientUpdate(string key, string value);
 	void clientDelete(string key);
 
+	// Find the addresses of the nodes that are resposible for the key
+	// This is in the order of the replicas
+	vector<RingEntry> findNodes(const string key);
+	vector<RingEntry> getMembershipList();
 
-	vector<shared_ptr<NetworkNode>> findNodes(const string key);
+protected:
+	size_t 					hashCode;
+
+	// This is a raw pointer since this object lives within the
+	// NetworkNode object.
+	NetworkNode * 			node;
+
+	// Our current view of the DHT ring
+	vector<RingEntry> 		ring;
+
 };
 
 

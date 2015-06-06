@@ -89,7 +89,6 @@ public:
 
 	// MP2 stuff
 	RingInfo 	ring;
-	//Node 		node;
 
 protected:
 

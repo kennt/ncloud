@@ -123,6 +123,15 @@ protected:
 	Params *				par;
 	weak_ptr<NetworkNode>	netnode;
 	shared_ptr<IConnection>	connection;
+
+	void updateRing();
+	void stabilizationProtocol();
+
+	// Server-side DB apis
+	bool createKeyValue(string key, string value, ReplicaType replica);
+	string readKey(string key);
+	bool updateKeyValue(string key, string value, ReplicaType replica);
+	bool deleteKey(string key);
 };
 
 

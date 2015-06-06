@@ -350,7 +350,7 @@ void Application::readTest()
 	// Step 0. Key to be read
 	// This key is used for all read tests
 	auto firstPair = testKVPairs.begin();
-	vector<shared_ptr<NetworkNode>> replicas;
+	vector<RingEntry> replicas;
 	int replicaIdToFail = TERTIARY;
 	shared_ptr<NetworkNode> nodeToFail;
 	bool failedOneNode = false;
@@ -400,7 +400,7 @@ void Application::readTest()
 
 		// Step 2.c Fail a replica
 		for (auto & node : nodes) {
-			if (node->address(ConnectType::RING) == replicas.at(replicaIdToFail)->address(ConnectType::RING)) {
+			if (node->address(ConnectType::RING) == replicas.at(replicaIdToFail).address) {
 				if ( !node->failed() ) {
 					nodeToFail = node;
 					failedOneNode = true;
@@ -474,7 +474,7 @@ void Application::readTest()
 					// count will never reach 2 (especially if the
 					// REPLICATION_FACTOR is 3).
 					for (auto & inode : nodes) {
-						if (inode->address(ConnectType::RING) == replicas.at(replicaIdToFail)->address(ConnectType::RING)) {
+						if (inode->address(ConnectType::RING) == replicas.at(replicaIdToFail).address) {
 							if (!inode->failed()) {
 								nodesToFail.emplace_back(inode);
 								replicaIdToFail--;
@@ -564,9 +564,9 @@ void Application::readTest()
 
 			Address addr = node->address(ConnectType::RING);
 
-			if (addr != replicas.at(PRIMARY)->address(ConnectType::RING) &&
-				addr != replicas.at(SECONDARY)->address(ConnectType::RING) &&
-				addr != replicas.at(TERTIARY)->address(ConnectType::RING)) {
+			if (addr != replicas.at(PRIMARY).address &&
+				addr != replicas.at(SECONDARY).address &&
+				addr != replicas.at(TERTIARY).address) {
 				// Step 4.c Fail a non-replica node
 				log->log(addr, "Node failed at time=%d", par->getCurrtime());
 				inode->fail();
@@ -626,7 +626,7 @@ void Application::updateTest()
 	auto kvEntry = testKVPairs.begin();
 	kvEntry++;
 	string newValue = "newValue";
-	vector<shared_ptr<NetworkNode>> replicas;
+	vector<RingEntry> replicas;
 	int replicaIdToFail = TERTIARY;
 	shared_ptr<NetworkNode> nodeToFail;
 	bool failedOneNode = false;
@@ -675,7 +675,7 @@ void Application::updateTest()
 
 		// Step 2.c Fail a replica
 		for (auto & inode : nodes) {
-			if (inode->address(ConnectType::RING) == replicas.at(replicaIdToFail)->address(ConnectType::RING)) {
+			if (inode->address(ConnectType::RING) == replicas.at(replicaIdToFail).address) {
 				if (!inode->failed()) {
 					nodeToFail = inode;
 					failedOneNode = true;
@@ -740,7 +740,7 @@ void Application::updateTest()
 				replicaIdToFail = TERTIARY;
 				while ( count != 2 ) {
 					for (auto & inode : nodes) {
-						if (inode->address(ConnectType::RING) == replicas.at(replicaIdToFail)->address(ConnectType::RING)) {
+						if (inode->address(ConnectType::RING) == replicas.at(replicaIdToFail).address) {
 							if (!inode->failed()) {
 								nodesToFail.emplace_back(inode);
 								replicaIdToFail--;
@@ -827,9 +827,9 @@ void Application::updateTest()
 
 			Address addr = inode->address(ConnectType::RING);
 
-			if (addr != replicas.at(PRIMARY)->address(ConnectType::RING) &&
-				addr != replicas.at(SECONDARY)->address(ConnectType::RING) &&
-				addr != replicas.at(TERTIARY)->address(ConnectType::RING)) {
+			if (addr != replicas.at(PRIMARY).address &&
+				addr != replicas.at(SECONDARY).address &&
+				addr != replicas.at(TERTIARY).address) {
 				// Step 4.c Fail a non-replica node
 				log->log(inode->address(ConnectType::RING),
 						 "Node failed at time=%d", par->getCurrtime());
