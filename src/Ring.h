@@ -68,6 +68,7 @@ public:
 
 protected:
 	size_t 					hashCode;
+	Address 				address;
 
 	// This is a raw pointer since this object lives within the
 	// NetworkNode object.

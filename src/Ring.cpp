@@ -12,6 +12,7 @@
 void RingInfo::init(NetworkNode *node, const Address& address)
 {
 	this->node = node;
+	this->address = address;
 	hashCode = hashFunction(address.toString());
 }
 

@@ -9,9 +9,9 @@
 #include "MP2.h"
 #include "NetworkNode.h"
 
- unique_ptr<Message> Message::Create(int transid, string key, string value, ReplicaType replica)
+ shared_ptr<Message> Message::Create(int transid, string key, string value, ReplicaType replica)
  {
- 	auto message = make_unique<Message>();
+ 	auto message = make_shared<Message>();
  	message->transid = transid;
  	message->type = RingMessageType::CREATE;
  	message->key = key;
@@ -20,18 +20,18 @@
  	return message;
  }
 
- unique_ptr<Message> Message::Read(int transid, string key)
+ shared_ptr<Message> Message::Read(int transid, string key)
  {
- 	auto message = make_unique<Message>();
+ 	auto message = make_shared<Message>();
  	message->transid = transid;
  	message->type = RingMessageType::READ;
  	message->key = key;
  	return message;
  }
 
- unique_ptr<Message> Message::Update(int transid, string key, string value, ReplicaType replica)
+ shared_ptr<Message> Message::Update(int transid, string key, string value, ReplicaType replica)
  {
- 	auto message = make_unique<Message>();
+ 	auto message = make_shared<Message>();
  	message->transid = transid;
  	message->type = RingMessageType::UPDATE;
  	message->key = key;
@@ -40,27 +40,27 @@
  	return message;
  }
 
- unique_ptr<Message> Message::Delete(int transid, string key)
+ shared_ptr<Message> Message::Delete(int transid, string key)
  {
- 	auto message = make_unique<Message>();
+ 	auto message = make_shared<Message>();
  	message->transid = transid;
  	message->type = RingMessageType::DELETE;
  	message->key = key;
  	return message;
  }
 
- unique_ptr<Message> Message::Reply(int transid, bool success)
+ shared_ptr<Message> Message::Reply(int transid, bool success)
  {
- 	auto message = make_unique<Message>();
+ 	auto message = make_shared<Message>();
  	message->transid = transid;
  	message->type = RingMessageType::REPLY;
  	message->success = success;
  	return message;
  }
 
- unique_ptr<Message> Message::ReadReply(int transid, string value)
+ shared_ptr<Message> Message::ReadReply(int transid, string value)
  {
- 	auto message = make_unique<Message>();
+ 	auto message = make_shared<Message>();
  	message->transid = transid;
  	message->type = RingMessageType::READREPLY;
  	message->value = value;
@@ -166,10 +166,10 @@ void MP2MessageHandler::onMessageReceived(const RawMessage *raw)
 	if (!node)
 		throw AppException("Network has been deleted");
 
-	//istringstream ss(std::string((const char *)raw->data.get(), raw->size));
+	istringstream ss(std::string((const char *)raw->data.get(), raw->size));
 
-	//RingMessageType msgtype = static_cast<RingMessageType>(read_raw<int>(ss));
-	//ss.seekg(0, ss.beg);	// reset to start of the buffer
+	RingMessageType msgtype = static_cast<RingMessageType>(read_raw<int>(ss));
+	ss.seekg(0, ss.beg);	// reset to start of the buffer
 
 	// Handle messages here
 	// This function should ensure

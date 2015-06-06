@@ -31,12 +31,12 @@ class NetworkNode;
 struct Message
 {
 public:
-	static unique_ptr<Message> Create(int transid, string key, string value, ReplicaType replica);
-	static unique_ptr<Message> Read(int transid, string key);
-	static unique_ptr<Message> Update(int transid, string key, string value, ReplicaType replcia);
-	static unique_ptr<Message> Delete(int transid, string key);
-	static unique_ptr<Message> Reply(int transid, bool success);
-	static unique_ptr<Message> ReadReply(int _transid, string value);
+	static shared_ptr<Message> Create(int transid, string key, string value, ReplicaType replica=ReplicaType::REPLNONE);
+	static shared_ptr<Message> Read(int transid, string key);
+	static shared_ptr<Message> Update(int transid, string key, string value, ReplicaType replcia=ReplicaType::REPLNONE);
+	static shared_ptr<Message> Delete(int transid, string key);
+	static shared_ptr<Message> Reply(int transid, bool success);
+	static shared_ptr<Message> ReadReply(int _transid, string value);
 
 	void load(istringstream& ss);
 	unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);
