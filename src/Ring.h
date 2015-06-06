@@ -19,7 +19,7 @@
 #include "Network.h"
 
 class NetworkNode;
-
+struct Message;
 
 struct RingEntry
 {
@@ -63,7 +63,7 @@ public:
 
 	// Find the addresses of the nodes that are resposible for the key
 	// This is in the order of the replicas
-	vector<RingEntry> findNodes(const string key);
+	vector<Address> findReplicas(const string key);
 	vector<RingEntry> getMembershipList();
 
 protected:

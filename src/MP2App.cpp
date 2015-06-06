@@ -350,7 +350,7 @@ void Application::readTest()
 	// Step 0. Key to be read
 	// This key is used for all read tests
 	auto firstPair = testKVPairs.begin();
-	vector<RingEntry> replicas;
+	vector<Address> replicas;
 	int replicaIdToFail = TERTIARY;
 	shared_ptr<NetworkNode> nodeToFail;
 	bool failedOneNode = false;
@@ -383,7 +383,7 @@ void Application::readTest()
 
 		// Step 2.b Find the replicas of this key
 		replicas.clear();
-		replicas = node->ring.findNodes(firstPair->first);
+		replicas = node->ring.findReplicas(firstPair->first);
 
 		// if less than quorum replicas are found then exit
 		//$ CHECK: Should this be REPLICATION_FACTOR or REPLICATION_FACTOR-1 ??
@@ -400,7 +400,7 @@ void Application::readTest()
 
 		// Step 2.c Fail a replica
 		for (auto & node : nodes) {
-			if (node->address(ConnectType::RING) == replicas.at(replicaIdToFail).address) {
+			if (node->address(ConnectType::RING) == replicas.at(replicaIdToFail)) {
 				if ( !node->failed() ) {
 					nodeToFail = node;
 					failedOneNode = true;
@@ -462,7 +462,7 @@ void Application::readTest()
 
 			// Get the keys replicas
 			replicas.clear();
-			replicas = node->ring.findNodes(firstPair->first);
+			replicas = node->ring.findReplicas(firstPair->first);
 
 			// Step 3.b. Fail two replicas
 			//cout<<"REPLICAS SIZE: "<<replicas.size();
@@ -474,7 +474,7 @@ void Application::readTest()
 					// count will never reach 2 (especially if the
 					// REPLICATION_FACTOR is 3).
 					for (auto & inode : nodes) {
-						if (inode->address(ConnectType::RING) == replicas.at(replicaIdToFail).address) {
+						if (inode->address(ConnectType::RING) == replicas.at(replicaIdToFail)) {
 							if (!inode->failed()) {
 								nodesToFail.emplace_back(inode);
 								replicaIdToFail--;
@@ -557,16 +557,16 @@ void Application::readTest()
 
 		// Step 4.b Find a non - replica for this key
 		replicas.clear();
-		replicas = node->ring.findNodes(firstPair->first);
+		replicas = node->ring.findReplicas(firstPair->first);
 		for (auto & inode : nodes) {
 			if (inode->failed())
 				continue;
 
 			Address addr = node->address(ConnectType::RING);
 
-			if (addr != replicas.at(PRIMARY).address &&
-				addr != replicas.at(SECONDARY).address &&
-				addr != replicas.at(TERTIARY).address) {
+			if (addr != replicas.at(PRIMARY) &&
+				addr != replicas.at(SECONDARY) &&
+				addr != replicas.at(TERTIARY)) {
 				// Step 4.c Fail a non-replica node
 				log->log(addr, "Node failed at time=%d", par->getCurrtime());
 				inode->fail();
@@ -626,7 +626,7 @@ void Application::updateTest()
 	auto kvEntry = testKVPairs.begin();
 	kvEntry++;
 	string newValue = "newValue";
-	vector<RingEntry> replicas;
+	vector<Address> replicas;
 	int replicaIdToFail = TERTIARY;
 	shared_ptr<NetworkNode> nodeToFail;
 	bool failedOneNode = false;
@@ -658,7 +658,7 @@ void Application::updateTest()
 
 		// Step 2.b Find the replicas of this key
 		replicas.clear();
-		replicas = node->ring.findNodes(kvEntry->first);
+		replicas = node->ring.findReplicas(kvEntry->first);
 
 		// if quorum replicas are not found then exit
 		//$ CHECK: should this be <= REPLICATION_FACTOR-1 ?
@@ -675,7 +675,7 @@ void Application::updateTest()
 
 		// Step 2.c Fail a replica
 		for (auto & inode : nodes) {
-			if (inode->address(ConnectType::RING) == replicas.at(replicaIdToFail).address) {
+			if (inode->address(ConnectType::RING) == replicas.at(replicaIdToFail)) {
 				if (!inode->failed()) {
 					nodeToFail = inode;
 					failedOneNode = true;
@@ -733,14 +733,14 @@ void Application::updateTest()
 
 			// Get the keys replicas
 			replicas.clear();
-			replicas = node->ring.findNodes(kvEntry->first);
+			replicas = node->ring.findReplicas(kvEntry->first);
 
 			// Step 3.b. Fail two replicas
 			if ( replicas.size() > 2 ) {
 				replicaIdToFail = TERTIARY;
 				while ( count != 2 ) {
 					for (auto & inode : nodes) {
-						if (inode->address(ConnectType::RING) == replicas.at(replicaIdToFail).address) {
+						if (inode->address(ConnectType::RING) == replicas.at(replicaIdToFail)) {
 							if (!inode->failed()) {
 								nodesToFail.emplace_back(inode);
 								replicaIdToFail--;
@@ -820,16 +820,16 @@ void Application::updateTest()
 
 		// Step 4.b Find a non - replica for this key
 		replicas.clear();
-		replicas = node->ring.findNodes(kvEntry->first);
+		replicas = node->ring.findReplicas(kvEntry->first);
 		for (auto & inode : nodes) {
 			if (inode->failed())
 				continue;
 
 			Address addr = inode->address(ConnectType::RING);
 
-			if (addr != replicas.at(PRIMARY).address &&
-				addr != replicas.at(SECONDARY).address &&
-				addr != replicas.at(TERTIARY).address) {
+			if (addr != replicas.at(PRIMARY) &&
+				addr != replicas.at(SECONDARY) &&
+				addr != replicas.at(TERTIARY)) {
 				// Step 4.c Fail a non-replica node
 				log->log(inode->address(ConnectType::RING),
 						 "Node failed at time=%d", par->getCurrtime());

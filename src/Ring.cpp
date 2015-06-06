@@ -81,25 +81,25 @@ void RingInfo::clientDelete(string key)
 // This function requires that the variable be ring contain a list
 // of member nodes.
 //
-vector<RingEntry> RingInfo::findNodes(const string key)
+vector<Address> RingInfo::findReplicas(const string key)
 {
 	size_t 	pos = hashFunction(key);
-	vector<RingEntry> addressVector;
+	vector<Address> addressVector;
 
 	if (ring.size() >= 3) {
 		// if pos <= min || pos > max, the leader is the min
 		if (pos <= ring.front().hashcode || pos > ring.back().hashcode) {
-			addressVector.emplace_back(ring.at(0));
-			addressVector.emplace_back(ring.at(1));
-			addressVector.emplace_back(ring.at(2));
+			addressVector.emplace_back(ring.at(0).address);
+			addressVector.emplace_back(ring.at(1).address);
+			addressVector.emplace_back(ring.at(2).address);
 		}
 		else {
 			for (int i=1; i<ring.size(); i++) {
 				RingEntry entry = ring.at(i);
 				if (pos <= entry.hashcode) {
-					addressVector.emplace_back(entry);
-					addressVector.emplace_back(ring.at((i+1) % RING_SIZE));
-					addressVector.emplace_back(ring.at((i+2) % RING_SIZE));
+					addressVector.emplace_back(entry.address);
+					addressVector.emplace_back(ring.at((i+1) % RING_SIZE).address);
+					addressVector.emplace_back(ring.at((i+2) % RING_SIZE).address);
 					break;
 				}
 			}
