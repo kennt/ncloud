@@ -38,10 +38,13 @@ This is where the main send/receive loop are driven from.  Currently, there is M
 * Log.* : logging implementation
 * Member.* : Holds data for MP1 (the membership protocol). MP2 classes will be able to access this data through the NetworkNode.
 * MP1.* : Holds the message handlers/messages for MP1
+* MP2.* : Holds the message handlers/messages for MP2
 * MP1App.* : Application for MP1, runs the test simulation
+* MP2App.* : Application for MP2, runs the test simulation
 * Network.h : Primary network interface header file
 * NetworkNode.* : A node on the network. This combines the network and the data for a particular node (which allows MP2 to access MP1 data).
 * Params.* : Parameter header file
+* Ring.* : Holds data for MP2 (the DHT ring).
 * SimNetwork.* : Implementation for a simulated network
 * SparseMatrix.h : sparse matrix implementation to store statistics
 * stdincludes.h
@@ -51,14 +54,13 @@ This is where the main send/receive loop are driven from.  Currently, there is M
 To solve MP1, the student should only need to change Member.* and MP1.*.
 
 ## Differences from the old version
-1. Ports are now used in the code. In my code I have used port 6000 for the membership protocol and 6001 for the ring protocol. This will allow one machine to run different processes all taking part in the membership/ring protocol.
-2. JSON is used as for the communication protocol.
+1. Ports are now used in the code. In my code I have used port 6000 for the membership protocol and 6001 for the ring protocol. This will allow one machine to run different processes all taking part in the membership/ring protocol.  An assumption in the code is that the ring protocol runs at one port higher than the membership protocol.
+2. The binary code has been rewritten to use binary streams.
 3. The params file is now a JSON file.
 
 
 ## Future work
 * Better documentation
-* Implement MP2App.cpp
 * Create a version that uses sockets
 * Better testing of the higher level code
 
