@@ -160,9 +160,6 @@ protected:
 	// Use this to store ID numbers for messages
 	int 		nextMessageID = 0;
 
-	// a list of the currently buffered messages
-	list<shared_ptr<SimMessage>>	messages;
-
 	// Maps the network address (IP address + port) to a
 	// connection/message queue.
 	map<NetworkID, ConnectionInfo> connections;

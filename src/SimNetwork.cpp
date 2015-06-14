@@ -121,7 +121,6 @@ unique_ptr<RawMessage> SimConnection::recv(int timeout)
 
 SimNetwork::~SimNetwork()
 {
-	messages.clear();
 	connections.clear();
 }
 
@@ -182,14 +181,14 @@ void SimNetwork::send(IConnection *conn, shared_ptr<SimMessage> message)
 	if (it == connections.end())
 		throw NetworkException("cannot find connection");
 
-	if (messages.size() >= MAX_BUFFER_SIZE)
-		throw NetworkException("too many messages, buffer limit exceeded");
-
 	if (message->dataSize >= par->maxMessageSize)
 		throw NetworkException("buffer too large");
 
 	if (par->dropMessages && ((rand() % 100) < (int)(par->msgDropProbability * 100)))
 		return;
+
+	if (it->second.messages.size() >= MAX_BUFFER_SIZE)
+		throw NetworkException("too many messages, buffer limit exceeded");
 
 	// Add this to the list of messages (note: we are adding the message
 	// to the destination's queue).
