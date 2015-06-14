@@ -51,14 +51,13 @@ This is where the main send/receive loop are driven from.  Currently, there is M
 To solve MP1, the student should only need to change Member.* and MP1.*.
 
 ## Differences from the old version
-1. Ports are now used in the code. In my code I have used port 6000 for the membership protocol and 6001 for the ring protocol. This will allow one machine to run different processes all taking part in the membership/ring protocol.
-2. JSON is used as for the communication protocol.
-3. The params file is now a JSON file.
+1. Ports are now used in the code. In my code I have used port 6000 for the membership protocol and 6001 for the ring protocol. This will allow one machine to run different processes all taking part in the membership/ring protocol.  For MP2, it is assumed that the port number for the ring protocol is one larger than for the membership protocol.
+2. The params file is now a JSON file.
 
 
 ## Future work
 * Better documentation
-* Implement MP2App.cpp
+* Implement MP2App.cpp (see the mp2 branch).
 * Create a version that uses sockets
 * Better testing of the higher level code
 

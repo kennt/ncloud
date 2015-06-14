@@ -236,6 +236,9 @@ struct RawMessage
 };
 
 
+// Abstract interface used to model a connection for both the simulated
+// network and the real network.
+//
 class IConnection
 {
 public:
@@ -249,13 +252,13 @@ public:
 
 	virtual Status getStatus() = 0;
 
-	// CHECK: This assumes that we are doing UDP-like
-	// communication.  Do we want TCP instead?
 	virtual void send(const RawMessage *message) = 0;
 	virtual unique_ptr<RawMessage> recv(int timeout) = 0;
 };
 
 
+// Abstract interface used as a factory for connections.
+//
 class INetwork
 {
 public:
@@ -268,6 +271,7 @@ public:
 	// Looks up the connection for an address.
 	virtual shared_ptr<IConnection> find(const Address& address) = 0;
 
+	// Removes the interface associated with the address from the network.
 	virtual void remove(const Address& address) = 0;
 };
 

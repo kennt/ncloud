@@ -69,7 +69,7 @@ void MP1MessageHandler::start(const Address &joinAddress)
 // This is a callback and is called when the connection has received
 // a message.
 //
-// The RawMessage will not be changed with.
+// The RawMessage will not be changed.
 //
 void MP1MessageHandler::onMessageReceived(const RawMessage *raw)
 {

@@ -70,6 +70,7 @@ std::unique_ptr<RawMessage> rawMessageFromStream(const Address &from,
                                                  const Address &to,
                                                  stringstream &os);
 
+// Functions to write various data types to a binary stream.
 template<class T>
 void write_raw(std::ostream& os, const T& value)
 {

@@ -31,6 +31,9 @@ const int MAX_BUFFER_SIZE = 16*1024;
 
 class SimNetwork;
 
+// Concrete implementation of an IConnection
+// This is used with the simulated network (SimNetwork).
+//
 class SimConnection : public IConnection
 {
 public:
@@ -67,13 +70,12 @@ protected:
 };
 
 
+// Used to store a message in the simulated network.
+//
 struct SimMessage
 {
-	SimMessage()
+	SimMessage() : timestamp(0), messageID(0), dataSize(0)
 	{
-		timestamp = 0;
-		messageID = 0;
-		dataSize = 0;
 	}
 
 	Address		fromAddress;
@@ -86,12 +88,19 @@ struct SimMessage
 };
 
 
+// Concrete implementation of an INetwork
+// This represents a "network".  Messages that are "sent" are stored
+// here in queues in a SimMessage.
+//
 class SimNetwork : public INetwork, public enable_shared_from_this<SimNetwork>
 {
 public:
+	// copying not allowed
 	SimNetwork(const SimNetwork &) = delete;
 	SimNetwork& operator =(SimNetwork &) = delete;
 
+	// Factory to create a SimNetwork. SimNetwork's should be created
+	// using this function, do not instantiate directly!
 	static shared_ptr<SimNetwork> createNetwork(Params *par)
 	{	return make_shared<SimNetwork>(par); }
 
@@ -116,10 +125,11 @@ public:
 
 	// Internal API, used mostly for test purposes.
 	shared_ptr<SimConnection> findSimConnection(const Address &address);
+
+	// Write out the summary statistics
 	void writeMsgcountLog(int memberProtocolPort);
 
-	// This should be made protected/private but it's doesn't
-	// work with the compiler I have.
+	// This should be protected/private, do not use this constructor.
 	SimNetwork(Params *par)
 	{
 		this->par = par;
@@ -135,6 +145,8 @@ public:
 
 protected:
 
+	// Stores the messages sent to this connection/address.
+	//
 	struct ConnectionInfo
 	{
 		shared_ptr<SimConnection> connection;
@@ -144,12 +156,15 @@ protected:
 	};
 
 	Params *	par;
+
+	// Use this to store ID numbers for messages
 	int 		nextMessageID = 0;
 
 	// a list of the currently buffered messages
 	list<shared_ptr<SimMessage>>	messages;
 
-	// a list of connections
+	// Maps the network address (IP address + port) to a
+	// connection/message queue.
 	map<NetworkID, ConnectionInfo> connections;
 
 	// Statistical counts

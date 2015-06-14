@@ -225,8 +225,6 @@ void SimNetwork::writeMsgcountLog(int memberProtocolPort)
 {
 	int j;
 	int sent_total, recv_total;
-	Address 	special(67, 0, 0, 0, memberProtocolPort);
-	NetworkID 	specialID = special.getNetworkID();
 
 	FILE* file = fopen("msgcount.log", "w+");
 
@@ -244,15 +242,9 @@ void SimNetwork::writeMsgcountLog(int memberProtocolPort)
 			sent_total += sent(id, j);
 			recv_total += received(id, j);
 
-			//$ WTF?
-			if (id != specialID) {
-				fprintf(file, " (%4d, %4d)", sent(id, j), received(id, j));
-				if (j % 10 == 9) {
-					fprintf(file, "\n         ");
-				}
-			}
-			else {
-				fprintf(file, "special %4d %4d %4d\n", j, sent(id, j), received(id, j));
+			fprintf(file, " (%4d, %4d)", sent(id, j), received(id, j));
+			if (j % 10 == 9) {
+				fprintf(file, "\n         ");
 			}
 		}
 		fprintf(file, "\n");
