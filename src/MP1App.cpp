@@ -95,7 +95,6 @@ void Application::run()
 
 	// clean everything out
 	nodes.clear();
-	simnetwork->removeAll();
 }
 
 void Application::mp1Run()

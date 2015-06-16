@@ -130,7 +130,7 @@ unique_ptr<RawMessage> SimConnection::recv(int timeout)
 
 SimNetwork::~SimNetwork()
 {
-	connections.clear();
+	removeAll();
 }
 
 shared_ptr<IConnection> SimNetwork::create(const Address &address)
