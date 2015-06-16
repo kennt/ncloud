@@ -34,8 +34,6 @@
 
 using namespace std;
 
-// A NetworkID is a combination of an IP address and a port.
-using NetworkID = long long;
 using byte = unsigned char;
 
 
@@ -109,30 +107,33 @@ inline unsigned int makeIPAddress(int a, int b, int c, int d)
 //
 class Address
 {
+friend bool operator< (const Address&, const Address&);
+friend bool operator> (const Address&, const Address&);
+friend bool operator== (const Address&, const Address&);
+friend bool operator!= (const Address&, const Address&);
+friend struct hash<Address>;
+
 public:
-	Address() : ipaddr(0), port(0)
+	enum class AddressType { None = 0, IPv4, IPv6 };
+
+	Address() : addrtype(AddressType::None), ipaddr(0), port(0)
 	{
 	}
 
 	Address(unsigned int ipaddr, unsigned short port)
-		: ipaddr(ipaddr), port(port)
+		: addrtype(AddressType::IPv4), ipaddr(ipaddr), port(port)
 	{
 	}
 
 	Address(int a, int b, int c, int d, unsigned short port)
 	{
+		this->addrtype = AddressType::IPv4;
 		this->ipaddr = makeIPAddress(a, b, c, d);
 		this->port = port;
 	}
 
-	Address(NetworkID id)
-	{
-		this->ipaddr = (id >> 16) & 0xFFFFFFFF;
-		this->port = (id & 0xFFFF);
-	}
-
 	// property accessors
-	unsigned int getIPAddress() const
+	unsigned int getIPv4Address() const
 	{
 		return ipaddr;
 	}
@@ -141,7 +142,7 @@ public:
 	// 0th octet are the highest order bits. The pos is [0..3].
 	// Asking for a pos outside of [0..3] is undefined.
 	//
-	unsigned char getIPOctet(int pos) const
+	unsigned char getIPv4Octet(int pos) const
 	{
 		return (this->ipaddr >> ((3 - pos)*8)) & 0xFF;
 	}
@@ -160,11 +161,6 @@ public:
 			ipaddr & 0xFF,
 			port
 			);
-	}
-
-	NetworkID getNetworkID() const
-	{
-		return (((unsigned long long )ipaddr) << 16) + port;
 	}
 
 	// Parses a IPv4 address of the form "XXX.XXX.XXX.XXX:YYY" where XXX
@@ -189,24 +185,34 @@ public:
 		if ((a > 255) || (b > 255) || (c > 255) || (d > 255))
 			throw AddressException("IPv4 address sections must be less than 255");
 
+		this->addrtype = AddressType::IPv4;
 		this->ipaddr = (a << 24) + (b << 16) + (c << 8) + d;
 		this->port = (unsigned short) stoi(address.substr(pos + 1,
 									 	   address.size()-pos-1));
 	}
 
 protected:
-	unsigned int 	ipaddr;
+	AddressType		addrtype;
+	unsigned int	ipaddr;
 	unsigned short	port;
 };
 
 inline bool operator< (const Address& lhs, const Address& rhs)
 {
-	return lhs.getNetworkID() < rhs.getNetworkID();
+	if (lhs.ipaddr != rhs.ipaddr)
+		return lhs.ipaddr < rhs.ipaddr;
+	else
+		return lhs.port < rhs.port;
+}
+
+inline bool operator> (const Address& lhs, const Address& rhs)
+{
+	return !(lhs < rhs) && !(lhs == rhs);
 }
 
 inline bool operator== (const Address& lhs, const Address& rhs)
 {
-	return lhs.getNetworkID() == rhs.getNetworkID();
+	return (lhs.ipaddr == rhs.ipaddr) && (lhs.port == rhs.port);
 }
 
 inline bool operator!= (const Address& lhs, const Address& rhs)
