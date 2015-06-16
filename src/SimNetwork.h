@@ -139,11 +139,11 @@ public:
 	}
 
 	// Statisical counts of msgs sent/recevied by this network
-	int getSentCount(NetworkID netID, int time)
-	{	return sent(netID, time); }
+	int getSentCount(const Address& addr, int time)
+	{	return sent(addr, time); }
 
-	int getReceivedCount(NetworkID netID, int time)
-	{	return received(netID, time); }
+	int getReceivedCount(const Address& addr, int time)
+	{	return received(addr, time); }
 
 protected:
 
@@ -164,12 +164,12 @@ protected:
 
 	// Maps the network address (IP address + port) to a
 	// connection/message queue.
-	map<NetworkID, ConnectionInfo> connections;
+	map<Address, ConnectionInfo> connections;
 
 	// Statistical counts
-	// this means int matrix[NetworkID][int]
-	SparseMatrix<int, NetworkID, int> sent;
-	SparseMatrix<int, NetworkID, int> received;
+	// this means int matrix[Address][int]
+	SparseMatrix<int, Address, int> sent;
+	SparseMatrix<int, Address, int> received;
 };
 
 

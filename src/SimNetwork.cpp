@@ -149,14 +149,14 @@ shared_ptr<IConnection> SimNetwork::create(const Address &address)
 	simconnection->init(address);
 
 	conninfo.connection = simconnection;
-	connections[address.getNetworkID()] = conninfo;;
+	connections[address] = conninfo;;
 
 	return shared_ptr<IConnection>(simconnection);
 }
 
 shared_ptr<IConnection> SimNetwork::find(const Address &address)
 {
-	auto it = connections.find(address.getNetworkID());
+	auto it = connections.find(address);
 	if (it == connections.end())
 		return nullptr;
 	return shared_ptr<IConnection>(it->second.connection);
@@ -164,7 +164,7 @@ shared_ptr<IConnection> SimNetwork::find(const Address &address)
 
 shared_ptr<SimConnection> SimNetwork::findSimConnection(const Address &address)
 {
-    auto it = connections.find(address.getNetworkID());
+    auto it = connections.find(address);
     if (it == connections.end())
         return nullptr;
     return it->second.connection;
@@ -172,7 +172,7 @@ shared_ptr<SimConnection> SimNetwork::findSimConnection(const Address &address)
 
 void SimNetwork::remove(const Address &address)
 {
-	auto it = connections.find(address.getNetworkID());
+	auto it = connections.find(address);
 	if (it != connections.end())
 	{
 		it->second.connection->close();
@@ -193,7 +193,7 @@ void SimNetwork::send(IConnection *conn, shared_ptr<SimMessage> message)
 	if (find(conn->address()).get() != conn)
 		throw NetworkException("connection not registered");
 
-	auto it = connections.find(message->toAddress.getNetworkID());
+	auto it = connections.find(message->toAddress);
 	if (it == connections.end())
 		throw NetworkException("cannot find connection");
 
@@ -211,7 +211,7 @@ void SimNetwork::send(IConnection *conn, shared_ptr<SimMessage> message)
 	it->second.messages.emplace_back(message);
 
 	// update the statistics
-	sent(conn->address().getNetworkID(), par->getCurrtime()) ++;
+	sent(conn->address(), par->getCurrtime()) ++;
 }
 
 shared_ptr<SimMessage> SimNetwork::recv(IConnection *conn)
@@ -220,7 +220,7 @@ shared_ptr<SimMessage> SimNetwork::recv(IConnection *conn)
 	if (find(conn->address()).get() != conn)
 		throw NetworkException("connection not registered");
 
-	auto it = connections.find(conn->address().getNetworkID());
+	auto it = connections.find(conn->address());
 	if (it == connections.end())
 		throw NetworkException("cannot find connection");
 
@@ -231,7 +231,7 @@ shared_ptr<SimMessage> SimNetwork::recv(IConnection *conn)
 	it->second.messages.pop_front();
 
 	// update the statistics
-	received(conn->address().getNetworkID(), par->getCurrtime()) ++;
+	received(conn->address(), par->getCurrtime()) ++;
 
 	return message;
 }
@@ -245,7 +245,7 @@ void SimNetwork::writeMsgcountLog(int memberProtocolPort)
 
 	for (auto & elem: connections)
 	{
-		NetworkID id = elem.first;
+		Address id = elem.first;
 		Address 	address(id);
 
 		sent_total = 0;

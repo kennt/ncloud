@@ -23,7 +23,7 @@ unique_ptr<RawMessage> JoinRequestMessage::toRawMessage(const Address &from,
 	stringstream 	ss;
 
 	write_raw<int>(ss, static_cast<int>(MEMBER_MSGTYPE::JOINREQ));
-	write_raw<int>(ss, this->address.getIPAddress());
+	write_raw<int>(ss, this->address.getIPv4Address());
 	write_raw<short>(ss, this->address.getPort());
 	write_raw<long>(ss, this->heartbeat);
 
