@@ -34,8 +34,6 @@
 
 using namespace std;
 
-// A NetworkID is a combination of an IP address and a port.
-using NetworkID = long long;
 using byte = unsigned char;
 
 
