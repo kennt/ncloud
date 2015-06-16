@@ -151,11 +151,11 @@ TEST_CASE("SimNetwork data operations", "[SimNetwork]")
 		REQUIRE( memcmp(recvMsg->data.get(), raw.data.get(), raw.size) == 0 );
 
 		// check if the statistics were updated correctly.
-		REQUIRE( network->getSentCount(addr.getNetworkID(), 0) == 1);
-		REQUIRE( network->getReceivedCount(addr.getNetworkID(), 0) == 0);
+		REQUIRE( network->getSentCount(addr, 0) == 1);
+		REQUIRE( network->getReceivedCount(addr, 0) == 0);
 
-		REQUIRE( network->getSentCount(addr2.getNetworkID(), 0) == 0);
-		REQUIRE( network->getReceivedCount(addr2.getNetworkID(), 0) == 1);
+		REQUIRE( network->getSentCount(addr2, 0) == 0);
+		REQUIRE( network->getReceivedCount(addr2, 0) == 1);
 	}
 
 	SECTION("send failure cases") {

@@ -8,6 +8,15 @@
 
 #include "NetworkNode.h"
 
+template<>
+ struct hash<Address> {
+ public:
+ 	size_t operator()(const Address &x) const
+ 	{
+ 		return hash<unsigned int>()(x.ipaddr) ^ hash<unsigned short>()(x.port);
+ 	}
+ };
+
 NetworkNode::NetworkNode(string name, Log *log, Params *par, shared_ptr<INetwork> network)
 	: member(log, par), ring(log, par)
 {
@@ -22,7 +31,7 @@ void NetworkNode::registerHandler(ConnectType conntype,
 								  shared_ptr<IConnection> connection,
 						   		  shared_ptr<IMessageHandler> handler)
 {
-	auto it = handlers.find(connection->address().getNetworkID());
+	auto it = handlers.find(connection->address());
 	if (it != handlers.end())
 		throw NetworkException("address already registered");
 
@@ -31,12 +40,12 @@ void NetworkNode::registerHandler(ConnectType conntype,
 							 handler,
 							 make_shared<list<unique_ptr<RawMessage>>>()
 							};
-	handlers[connection->address().getNetworkID()] = info;
+	handlers[connection->address()] = info;
 }
 
 void NetworkNode::unregisterHandler(const Address &address)
 {
-	auto it = handlers.find(address.getNetworkID());
+	auto it = handlers.find(address);
 	if (it != handlers.end())
 		handlers.erase(it);
 }

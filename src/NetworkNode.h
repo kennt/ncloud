@@ -128,7 +128,7 @@ protected:
 
 	bool 				hasFailed;
 	string 				name;	
-	map<NetworkID, HandlerInfo> handlers;
+	map<Address, HandlerInfo> handlers;
 	Log *				log;
 	Params *			par;
 	weak_ptr<INetwork>	network;

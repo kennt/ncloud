@@ -14,11 +14,11 @@ TEST_CASE("Address creation", "[Address]")
 {
 	// Test creation of an address
 	Address 	addr0;
-	REQUIRE( addr0.getIPAddress() == 0 );
+	REQUIRE( addr0.getIPv4Address() == 0 );
 	REQUIRE( addr0.getPort() == 0 );
 
 	Address 	addr1(31, 32);
-	REQUIRE( addr1.getIPAddress() == 31 );
+	REQUIRE( addr1.getIPv4Address() == 31 );
 	REQUIRE( addr1.getPort() == 32 );
 }
 
@@ -28,7 +28,7 @@ TEST_CASE("Address parsing", "[Address]")
 
 	SECTION("successful parsing test") {
 		addr.parse("100.101.102.103:80");
-		REQUIRE( addr.getIPAddress() == 0x64656667 );
+		REQUIRE( addr.getIPv4Address() == 0x64656667 );
 		REQUIRE( addr.getPort() == 80 );
 	}
 
@@ -52,12 +52,6 @@ TEST_CASE("Address string functions", "[Address]")
 	REQUIRE( addr.toString() == "100.101.102.103:8080" );
 }
 
-TEST_CASE("Address hash code / Network ID", "[Address]")
-{
-	Address 	addr(0x64656667, 0xabcd);
-	REQUIRE( addr.getNetworkID() == 0x64656667abcd );
-}
-
 TEST_CASE("Address comparison operators", "[Address]")
 {
 	Address 	addr1(0x64656667, 0xabcd);
@@ -75,8 +69,8 @@ TEST_CASE("Address comparison operators", "[Address]")
 TEST_CASE("Address octet access", "[Address]")
 {
 	Address 	addr(0x64656667, 0xabcd);
-	REQUIRE( addr.getIPOctet(0) == 100 );
-	REQUIRE( addr.getIPOctet(1) == 101 );
-	REQUIRE( addr.getIPOctet(2) == 102 );
-	REQUIRE( addr.getIPOctet(3) == 103 );	
+	REQUIRE( addr.getIPv4Octet(0) == 100 );
+	REQUIRE( addr.getIPv4Octet(1) == 101 );
+	REQUIRE( addr.getIPv4Octet(2) == 102 );
+	REQUIRE( addr.getIPv4Octet(3) == 103 );	
 }
