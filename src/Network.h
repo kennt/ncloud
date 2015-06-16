@@ -246,6 +246,16 @@ public:
 
 	virtual ~IConnection() {};
 
+	// Opens and closes the connection.  Does the work of setting and
+	// tearing down the connection.  init() is called when INetwork::create
+	// is called and close() is called when INetwork::remove is called.
+	// Calling init() on an already initialized connection will fail.
+	// Calling close() on an already closed() connection will do nothing.
+	//
+	// For legacy reasons, init() returns 0 on success, else failure.
+	virtual int init(const Address& address) = 0;
+	virtual void close() = 0;
+
 	// Returns the address associated with this connection.
 	//
 	virtual const Address &address() = 0;
@@ -273,6 +283,9 @@ public:
 
 	// Removes the interface associated with the address from the network.
 	virtual void remove(const Address& address) = 0;
+
+	// Removes all connections and calls close() on each connection.
+	virtual void removeAll() = 0;
 };
 
 #endif /* NCLOUD_NETWORK_H */

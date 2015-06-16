@@ -44,7 +44,8 @@ public:
 	SimConnection(const SimConnection &) = delete;
 	SimConnection &operator= (const SimConnection &) = delete;
 
-	int init(const Address &myAddress);
+	virtual int init(const Address &myAddress) override;
+	virtual void close() override;
 
 	virtual const Address &address() override { return myAddress; }
 	virtual IConnection::Status getStatus() override;
@@ -109,6 +110,7 @@ public:
 	virtual shared_ptr<IConnection> create(const Address &myAddress) override;
 	virtual shared_ptr<IConnection> find(const Address &address) override;
 	virtual void remove(const Address &address) override;
+	virtual void removeAll() override;
 
 	// Retrieves the next available message ID.  This is an internal ID within
 	// the simulated network.

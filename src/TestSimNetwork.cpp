@@ -64,6 +64,36 @@ TEST_CASE("Basic SimNetwork ops", "[SimNetwork]")
 		// Delete a non-existent connection
 		network->remove(addr);
 	}
+
+	SECTION("opening and closing") {
+		auto conn = network->create(addr);
+		REQUIRE( conn->init(addr) == -1 );
+		
+		conn->close();
+		REQUIRE( conn->getStatus() == IConnection::CLOSED );
+
+		// Conenction should still be there (but in a closed state).
+		auto conn2 = network->find(addr);
+		REQUIRE( conn2 != nullptr );
+
+		conn->close();
+		REQUIRE( conn->getStatus() == IConnection::CLOSED );
+
+		network->remove(addr);
+	}
+
+	SECTION("removeAll") {
+		auto conn = network->create(addr);
+
+		auto conn2 = network->find(addr);
+		REQUIRE( conn2 != nullptr );
+		REQUIRE( conn2->getStatus() != IConnection::CLOSED );
+
+		network->removeAll();
+		conn2 = network->find(addr);
+		REQUIRE( conn2 == nullptr );
+		REQUIRE( conn->getStatus() == IConnection::CLOSED );		
+	}
 }
 
 TEST_CASE("SimConnection test", "[SimConnection]")
@@ -181,4 +211,5 @@ TEST_CASE("SimNetwork data operations", "[SimNetwork]")
 		REQUIRE_THROWS( conn2->send(&raw) );
 		REQUIRE_THROWS( conn2->recv(0) );
 	}
+
 }

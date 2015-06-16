@@ -44,6 +44,10 @@ int SimConnection::getOption(const char *name)
 
 int SimConnection::init(const Address &address)
 {
+	if (this->status != IConnection::UNINITIALIZED &&
+		this->status != IConnection::CLOSED)
+		return -1;
+
 	this->myAddress = address;
 
 	//$ TODO: We're running with UDP, so there is no
@@ -51,6 +55,11 @@ int SimConnection::init(const Address &address)
 	this->status = IConnection::RUNNING;
 
 	return 0;
+}
+
+void SimConnection::close()
+{
+	this->status = IConnection::CLOSED;
 }
 
 IConnection::Status SimConnection::getStatus()
@@ -166,9 +175,16 @@ void SimNetwork::remove(const Address &address)
 	auto it = connections.find(address.getNetworkID());
 	if (it != connections.end())
 	{
-		it->second.connection->setOption<int>("status", IConnection::CLOSED);
+		it->second.connection->close();
 		connections.erase(it);
 	}
+}
+
+void SimNetwork::removeAll()
+{
+	for (const auto & elem : connections)
+		elem.second.connection->close();
+	connections.clear();
 }
 
 void SimNetwork::send(IConnection *conn, shared_ptr<SimMessage> message)
