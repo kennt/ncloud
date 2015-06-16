@@ -66,6 +66,8 @@ public:
 	vector<Address> findReplicas(const string key);
 	vector<RingEntry> getMembershipList();
 
+	void updateRing();
+
 protected:
 	size_t 					hashCode;
 	Address 				address;
@@ -77,6 +79,7 @@ protected:
 	// Our current view of the DHT ring
 	vector<RingEntry> 		ring;
 
+	void stabilizationProtocol();
 };
 
 

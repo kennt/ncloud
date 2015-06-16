@@ -98,8 +98,8 @@ vector<Address> RingInfo::findReplicas(const string key)
 				RingEntry entry = ring.at(i);
 				if (pos <= entry.hashcode) {
 					addressVector.emplace_back(entry.address);
-					addressVector.emplace_back(ring.at((i+1) % RING_SIZE).address);
-					addressVector.emplace_back(ring.at((i+2) % RING_SIZE).address);
+					addressVector.emplace_back(ring.at((i+1) % ring.size()).address);
+					addressVector.emplace_back(ring.at((i+2) % ring.size()).address);
 					break;
 				}
 			}
@@ -134,3 +134,53 @@ vector<RingEntry> RingInfo::getMembershipList()
 
 	return curList;
 }
+
+// This function does the following:
+//	(1) Gets the current message list from the Membership protcol.
+//		The membership list is returned as a vector of shared node ptrs.
+//	(2) Constructs the ring based on the membership lists
+//	(3)	Calls the stabilization protocol
+//
+void RingInfo::updateRing()
+{
+	//
+	// Implement this, parts of it are already implemented
+	//
+	vector<RingEntry> curMemberList;
+	bool changed = false;
+
+	//
+	// Step 1: Get the current membership list from the Membership protocol
+	//
+	curMemberList = node->ring.getMembershipList();
+
+	//
+	// Step 2: Construct the ring
+	//
+	sort(curMemberList.begin(), curMemberList.end(),
+		[](RingEntry & lhs, RingEntry & rhs) {
+			return lhs.hashcode < rhs.hashcode;
+		});
+
+	//
+	// Step 3: Run the stabilization protocol IF REQUIRED
+	//
+	// run the stabilization protocol if the hash table size is
+	// greater than zero and if there has been a change in the ring.
+}
+
+// This runs the stabilization protocol in case of Node joins and leaves.
+// It ensures that there are always 3 copies of all keys in the DHT at at
+// all times. The function does the following:
+//	(1) Ensures that there are three "CORRECT" replicas of all the keys in
+//		spite of failures and joins.
+//		Note: "CORRECT" replicas implies that every key is replicated in its
+//		two neighboring nodes in the ring.
+//
+void RingInfo::stabilizationProtocol()
+{
+	//
+	// Implement this
+	//
+}
+

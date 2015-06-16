@@ -43,7 +43,12 @@ struct JoinRequestMessage
 	JoinRequestMessage() : heartbeat(0)
 	{}
 
+	// Loads the data from the stringstream into this object.
 	void load(istringstream& ss);
+
+	// Creates a RawMessage and serializes the data for this object
+	// into the RawMessage data.  Ownership of the RawMessage is passed
+	// to the caller.
 	unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);
 };
 

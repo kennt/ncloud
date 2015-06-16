@@ -44,6 +44,10 @@ int SimConnection::getOption(const char *name)
 
 int SimConnection::init(const Address &address)
 {
+	if (this->status != IConnection::UNINITIALIZED &&
+		this->status != IConnection::CLOSED)
+		return -1;
+
 	this->myAddress = address;
 
 	//$ TODO: We're running with UDP, so there is no
@@ -51,6 +55,11 @@ int SimConnection::init(const Address &address)
 	this->status = IConnection::RUNNING;
 
 	return 0;
+}
+
+void SimConnection::close()
+{
+	this->status = IConnection::CLOSED;
 }
 
 IConnection::Status SimConnection::getStatus()
@@ -121,7 +130,6 @@ unique_ptr<RawMessage> SimConnection::recv(int timeout)
 
 SimNetwork::~SimNetwork()
 {
-	messages.clear();
 	connections.clear();
 }
 
@@ -167,9 +175,16 @@ void SimNetwork::remove(const Address &address)
 	auto it = connections.find(address.getNetworkID());
 	if (it != connections.end())
 	{
-		it->second.connection->setOption<int>("status", IConnection::CLOSED);
+		it->second.connection->close();
 		connections.erase(it);
 	}
+}
+
+void SimNetwork::removeAll()
+{
+	for (const auto & elem : connections)
+		elem.second.connection->close();
+	connections.clear();
 }
 
 void SimNetwork::send(IConnection *conn, shared_ptr<SimMessage> message)
@@ -182,14 +197,14 @@ void SimNetwork::send(IConnection *conn, shared_ptr<SimMessage> message)
 	if (it == connections.end())
 		throw NetworkException("cannot find connection");
 
-	if (messages.size() >= MAX_BUFFER_SIZE)
-		throw NetworkException("too many messages, buffer limit exceeded");
-
 	if (message->dataSize >= par->maxMessageSize)
 		throw NetworkException("buffer too large");
 
 	if (par->dropMessages && ((rand() % 100) < (int)(par->msgDropProbability * 100)))
 		return;
+
+	if (it->second.messages.size() >= MAX_BUFFER_SIZE)
+		throw NetworkException("too many messages, buffer limit exceeded");
 
 	// Add this to the list of messages (note: we are adding the message
 	// to the destination's queue).
@@ -225,8 +240,6 @@ void SimNetwork::writeMsgcountLog(int memberProtocolPort)
 {
 	int j;
 	int sent_total, recv_total;
-	Address 	special(67, 0, 0, 0, memberProtocolPort);
-	NetworkID 	specialID = special.getNetworkID();
 
 	FILE* file = fopen("msgcount.log", "w+");
 
@@ -244,15 +257,9 @@ void SimNetwork::writeMsgcountLog(int memberProtocolPort)
 			sent_total += sent(id, j);
 			recv_total += received(id, j);
 
-			//$ WTF?
-			if (id != specialID) {
-				fprintf(file, " (%4d, %4d)", sent(id, j), received(id, j));
-				if (j % 10 == 9) {
-					fprintf(file, "\n         ");
-				}
-			}
-			else {
-				fprintf(file, "special %4d %4d %4d\n", j, sent(id, j), received(id, j));
+			fprintf(file, " (%4d, %4d)", sent(id, j), received(id, j));
+			if (j % 10 == 9) {
+				fprintf(file, "\n         ");
 			}
 		}
 		fprintf(file, "\n");

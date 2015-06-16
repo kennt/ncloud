@@ -236,6 +236,9 @@ struct RawMessage
 };
 
 
+// Abstract interface used to model a connection for both the simulated
+// network and the real network.
+//
 class IConnection
 {
 public:
@@ -243,19 +246,29 @@ public:
 
 	virtual ~IConnection() {};
 
+	// Opens and closes the connection.  Does the work of setting and
+	// tearing down the connection.  init() is called when INetwork::create
+	// is called and close() is called when INetwork::remove is called.
+	// Calling init() on an already initialized connection will fail.
+	// Calling close() on an already closed() connection will do nothing.
+	//
+	// For legacy reasons, init() returns 0 on success, else failure.
+	virtual int init(const Address& address) = 0;
+	virtual void close() = 0;
+
 	// Returns the address associated with this connection.
 	//
 	virtual const Address &address() = 0;
 
 	virtual Status getStatus() = 0;
 
-	// CHECK: This assumes that we are doing UDP-like
-	// communication.  Do we want TCP instead?
 	virtual void send(const RawMessage *message) = 0;
 	virtual unique_ptr<RawMessage> recv(int timeout) = 0;
 };
 
 
+// Abstract interface used as a factory for connections.
+//
 class INetwork
 {
 public:
@@ -268,7 +281,11 @@ public:
 	// Looks up the connection for an address.
 	virtual shared_ptr<IConnection> find(const Address& address) = 0;
 
+	// Removes the interface associated with the address from the network.
 	virtual void remove(const Address& address) = 0;
+
+	// Removes all connections and calls close() on each connection.
+	virtual void removeAll() = 0;
 };
 
 #endif /* NCLOUD_NETWORK_H */
