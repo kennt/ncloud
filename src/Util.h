@@ -39,18 +39,18 @@ std::unique_ptr<T> make_unique(Args&&... args) {
 class AppException : public std::exception
 {
 public:
-	AppException(const char *description)
-	{
-		desc = description;
-	}
+    AppException(const char *description)
+    {
+        desc = description;
+    }
 
-	virtual const char *what() const throw()
-	{
-		return desc.c_str();
-	}
+    virtual const char *what() const throw()
+    {
+        return desc.c_str();
+    }
 
 protected:
-	std::string desc;
+    std::string desc;
 };
 
 

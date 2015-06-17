@@ -8,13 +8,13 @@
  * are stored in queues internally.
  *
  * SimConnection
- *	Simulated connection interface.
+ *  Simulated connection interface.
  *
  * SimMessage
- *	Internal message class for the Simulated Network.
+ *  Internal message class for the Simulated Network.
  *
  * SimNetwork
- *	Factory interface for the simlated network.
+ *  Factory interface for the simlated network.
  *
  *****/
 
@@ -37,37 +37,37 @@ class SimNetwork;
 class SimConnection : public IConnection
 {
 public:
-	SimConnection(Params *par, weak_ptr<SimNetwork> simnet);
-	virtual ~SimConnection();
+    SimConnection(Params *par, weak_ptr<SimNetwork> simnet);
+    virtual ~SimConnection();
 
-	// Copying not allowed
-	SimConnection(const SimConnection &) = delete;
-	SimConnection &operator= (const SimConnection &) = delete;
+    // Copying not allowed
+    SimConnection(const SimConnection &) = delete;
+    SimConnection &operator= (const SimConnection &) = delete;
 
-	virtual int init(const Address &myAddress) override;
-	virtual void close() override;
+    virtual int init(const Address &myAddress) override;
+    virtual void close() override;
 
-	virtual const Address &address() override { return myAddress; }
-	virtual IConnection::Status getStatus() override;
+    virtual const Address &address() override { return myAddress; }
+    virtual IConnection::Status getStatus() override;
 
-	virtual void send(const RawMessage *message) override;
-	virtual unique_ptr<RawMessage> recv(int timeout) override;
+    virtual void send(const RawMessage *message) override;
+    virtual unique_ptr<RawMessage> recv(int timeout) override;
 
-	// Use these functions to change state
-	// (for example, changing running to true/false).
-	//    setOption<bool>("running", false);
-	template<typename T>
-	void setOption(const char *name, T val);
+    // Use these functions to change state
+    // (for example, changing running to true/false).
+    //    setOption<bool>("running", false);
+    template<typename T>
+    void setOption(const char *name, T val);
 
-	template<typename T>
-	T getOption(const char *name);
+    template<typename T>
+    T getOption(const char *name);
 
 protected:
-	Params *		par;
-	weak_ptr<SimNetwork>	simnet;
-	Address 		myAddress;
+    Params *        par;
+    weak_ptr<SimNetwork>    simnet;
+    Address         myAddress;
 
-	IConnection::Status status;
+    IConnection::Status status;
 };
 
 
@@ -75,17 +75,17 @@ protected:
 //
 struct SimMessage
 {
-	SimMessage() : timestamp(0), messageID(0), dataSize(0)
-	{
-	}
+    SimMessage() : timestamp(0), messageID(0), dataSize(0)
+    {
+    }
 
-	Address		fromAddress;
-	Address		toAddress;
-	int 		timestamp;
-	int 		messageID;
+    Address     fromAddress;
+    Address     toAddress;
+    int         timestamp;
+    int         messageID;
 
-	size_t		dataSize;
-	unique_ptr<byte[]> data;
+    size_t      dataSize;
+    unique_ptr<byte[]> data;
 };
 
 
@@ -96,80 +96,80 @@ struct SimMessage
 class SimNetwork : public INetwork, public enable_shared_from_this<SimNetwork>
 {
 public:
-	// copying not allowed
-	SimNetwork(const SimNetwork &) = delete;
-	SimNetwork& operator =(SimNetwork &) = delete;
+    // copying not allowed
+    SimNetwork(const SimNetwork &) = delete;
+    SimNetwork& operator =(SimNetwork &) = delete;
 
-	// Factory to create a SimNetwork. SimNetwork's should be created
-	// using this function, do not instantiate directly!
-	static shared_ptr<SimNetwork> createNetwork(Params *par)
-	{	return make_shared<SimNetwork>(par); }
+    // Factory to create a SimNetwork. SimNetwork's should be created
+    // using this function, do not instantiate directly!
+    static shared_ptr<SimNetwork> createNetwork(Params *par)
+    {   return make_shared<SimNetwork>(par); }
 
-	virtual ~SimNetwork();
+    virtual ~SimNetwork();
 
-	virtual shared_ptr<IConnection> create(const Address &myAddress) override;
-	virtual shared_ptr<IConnection> find(const Address &address) override;
-	virtual void remove(const Address &address) override;
-	virtual void removeAll() override;
+    virtual shared_ptr<IConnection> create(const Address &myAddress) override;
+    virtual shared_ptr<IConnection> find(const Address &address) override;
+    virtual void remove(const Address &address) override;
+    virtual void removeAll() override;
 
-	// Retrieves the next available message ID.  This is an internal ID within
-	// the simulated network.
-	int 	getNextMessageID() { return nextMessageID++; }
+    // Retrieves the next available message ID.  This is an internal ID within
+    // the simulated network.
+    int     getNextMessageID() { return nextMessageID++; }
 
-	// These are the internal APIS to the actual simulated network
-	// This will add a message that will be stored by our "network".
-	// It is expected that if you want an error to be propagated
-	// up, throw an exception. This is different from the case where
-	// the network eats the message up but the higher-level code
-	// received message success.
-	void 	send(IConnection *conn, shared_ptr<SimMessage> message);
-	shared_ptr<SimMessage> recv(IConnection *conn);
+    // These are the internal APIS to the actual simulated network
+    // This will add a message that will be stored by our "network".
+    // It is expected that if you want an error to be propagated
+    // up, throw an exception. This is different from the case where
+    // the network eats the message up but the higher-level code
+    // received message success.
+    void    send(IConnection *conn, shared_ptr<SimMessage> message);
+    shared_ptr<SimMessage> recv(IConnection *conn);
 
-	// Internal API, used mostly for test purposes.
-	shared_ptr<SimConnection> findSimConnection(const Address &address);
+    // Internal API, used mostly for test purposes.
+    shared_ptr<SimConnection> findSimConnection(const Address &address);
 
-	// Write out the summary statistics
-	void writeMsgcountLog(int memberProtocolPort);
+    // Write out the summary statistics
+    void writeMsgcountLog(int memberProtocolPort);
 
-	// This should be protected/private, do not use this constructor.
-	SimNetwork(Params *par)
-	{
-		this->par = par;
-		this->nextMessageID = 1;
-	}
+    // This should be protected/private, do not use this constructor.
+    SimNetwork(Params *par)
+    {
+        this->par = par;
+        this->nextMessageID = 1;
+    }
 
-	// Statisical counts of msgs sent/recevied by this network
-	int getSentCount(const Address& addr, int time)
-	{	return sent(addr, time); }
+    // Statisical counts of msgs sent/recevied by this network
+    int getSentCount(const Address& addr, int time)
+    {   return sent(addr, time); }
 
-	int getReceivedCount(const Address& addr, int time)
-	{	return received(addr, time); }
+    int getReceivedCount(const Address& addr, int time)
+    {   return received(addr, time); }
 
 protected:
 
-	// Stores the messages sent to this connection/address.
-	//
-	struct ConnectionInfo
-	{
-		shared_ptr<SimConnection> connection;
+    // Stores the messages sent to this connection/address.
+    //
+    struct ConnectionInfo
+    {
+        shared_ptr<SimConnection> connection;
 
-		// A list of buffered messages for this connection
-		list<shared_ptr<SimMessage>>	messages;
-	};
+        // A list of buffered messages for this connection
+        list<shared_ptr<SimMessage>>    messages;
+    };
 
-	Params *	par;
+    Params *    par;
 
-	// Use this to store ID numbers for messages
-	int 		nextMessageID = 0;
+    // Use this to store ID numbers for messages
+    int         nextMessageID = 0;
 
-	// Maps the network address (IP address + port) to a
-	// connection/message queue.
-	map<Address, ConnectionInfo> connections;
+    // Maps the network address (IP address + port) to a
+    // connection/message queue.
+    map<Address, ConnectionInfo> connections;
 
-	// Statistical counts
-	// this means int matrix[Address][int]
-	SparseMatrix<int, Address, int> sent;
-	SparseMatrix<int, Address, int> received;
+    // Statistical counts
+    // this means int matrix[Address][int]
+    SparseMatrix<int, Address, int> sent;
+    SparseMatrix<int, Address, int> received;
 };
 
 

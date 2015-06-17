@@ -23,8 +23,8 @@
 #include "NetworkNode.h"
 
 
-const int TREMOVE 	= 20;
-const int TFAIL 	= 5;
+const int TREMOVE   = 20;
+const int TFAIL     = 5;
 
 
 enum MEMBER_MSGTYPE { NONE=0, JOINREQ };
@@ -36,20 +36,20 @@ class NetworkNode;
 //
 struct JoinRequestMessage
 {
-	// Implied MEMBER_MSGTYPE::JOINREQ
-	Address 	address;
-	long 		heartbeat;
+    // Implied MEMBER_MSGTYPE::JOINREQ
+    Address     address;
+    long        heartbeat;
 
-	JoinRequestMessage() : heartbeat(0)
-	{}
+    JoinRequestMessage() : heartbeat(0)
+    {}
 
-	// Loads the data from the stringstream into this object.
-	void load(istringstream& ss);
+    // Loads the data from the stringstream into this object.
+    void load(istringstream& ss);
 
-	// Creates a RawMessage and serializes the data for this object
-	// into the RawMessage data.  Ownership of the RawMessage is passed
-	// to the caller.
-	unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);
+    // Creates a RawMessage and serializes the data for this object
+    // into the RawMessage data.  Ownership of the RawMessage is passed
+    // to the caller.
+    unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);
 };
 
 
@@ -58,36 +58,36 @@ struct JoinRequestMessage
 class MP1MessageHandler: public IMessageHandler
 {
 public:
-	MP1MessageHandler(Log *log, 
-					  Params *par,
-					  shared_ptr<NetworkNode> netnode,
-					  shared_ptr<IConnection> connection)
-		: log(log), par(par), netnode(netnode), connection(connection), timeout(0)
-	{
-	}
+    MP1MessageHandler(Log *log, 
+                      Params *par,
+                      shared_ptr<NetworkNode> netnode,
+                      shared_ptr<IConnection> connection)
+        : log(log), par(par), netnode(netnode), connection(connection), timeout(0)
+    {
+    }
 
-	virtual ~MP1MessageHandler() {}
+    virtual ~MP1MessageHandler() {}
 
-	// Initializes the MessageHandler, if needed. This will be called
-	// before onMessageReceived() or onTimeout() will be called.
-	virtual void start(const Address &address) override;	
+    // Initializes the MessageHandler, if needed. This will be called
+    // before onMessageReceived() or onTimeout() will be called.
+    virtual void start(const Address &address) override;    
 
-	// This is called when a message has been received.  This may be
-	// called more than once for a timeslice.
-	virtual void onMessageReceived(const RawMessage *) override;
+    // This is called when a message has been received.  This may be
+    // called more than once for a timeslice.
+    virtual void onMessageReceived(const RawMessage *) override;
 
-	// Called when no messages are available (and the connection has timed out).
-	virtual void onTimeout() override;
+    // Called when no messages are available (and the connection has timed out).
+    virtual void onTimeout() override;
 
-	// Performs the action to join a group (sending a JoinRequest message).
-	void joinGroup(const Address& address);
+    // Performs the action to join a group (sending a JoinRequest message).
+    void joinGroup(const Address& address);
 
 protected:
-	Log *					log;
-	Params *				par;
-	weak_ptr<NetworkNode>	netnode;
-	shared_ptr<IConnection>	connection;
-	int						timeout;
+    Log *                   log;
+    Params *                par;
+    weak_ptr<NetworkNode>   netnode;
+    shared_ptr<IConnection> connection;
+    int                     timeout;
 };
 
 

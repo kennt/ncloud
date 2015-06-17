@@ -18,7 +18,7 @@
 #include "Network.h"
 
 // Number of writes before the log is flushed to the disk.
-const int 	 MAX_WRITES = 1;
+const int    MAX_WRITES = 1;
 
 const string DBG_LOG = "dbg.log";
 
@@ -27,31 +27,31 @@ const string DBG_LOG = "dbg.log";
 class Log
 {
 public:
-	Log(Params *p);
+    Log(Params *p);
 
-	// Don't allow any copying of the Log object
-	Log(const Log &) = delete;
-	Log& operator= (const Log &) = delete;
+    // Don't allow any copying of the Log object
+    Log(const Log &) = delete;
+    Log& operator= (const Log &) = delete;
 
-	~Log();
+    ~Log();
 
-	void log(const Address &address, const char *fmt, ...);
-	void logNodeAdd(const Address &thisNode, const Address &addedNode);
-	void logNodeRemove(const Address &thisNode, const Address &removedNode);
+    void log(const Address &address, const char *fmt, ...);
+    void logNodeAdd(const Address &thisNode, const Address &addedNode);
+    void logNodeRemove(const Address &thisNode, const Address &removedNode);
 
-	// success
-	void logCreate(const Address& addr, bool isCoord, bool isSuccess, int transid, string key, string value);
-	void logRead(const Address& addr, bool isCoord, bool isSuccess, int transid, string key, string value);
-	void logUpdate(const Address& addr, bool isCoord, bool isSuccess, int transid, string key, string newValue);
-	void logDelete(const Address& addr, bool isCoord, bool isSuccess, int transid, string key);
+    // success
+    void logCreate(const Address& addr, bool isCoord, bool isSuccess, int transid, string key, string value);
+    void logRead(const Address& addr, bool isCoord, bool isSuccess, int transid, string key, string value);
+    void logUpdate(const Address& addr, bool isCoord, bool isSuccess, int transid, string key, string newValue);
+    void logDelete(const Address& addr, bool isCoord, bool isSuccess, int transid, string key);
 
 
 protected:
-	Params *par = nullptr;
-	bool	firstTime = true;
+    Params *par = nullptr;
+    bool    firstTime = true;
 
-	FILE *	fpDebug = nullptr;
-	int 	numWrites = 0;
+    FILE *  fpDebug = nullptr;
+    int     numWrites = 0;
 };
 
 
@@ -59,13 +59,13 @@ protected:
 // debug output.
 #ifdef DEBUG
 
-	#define DEBUG_LOG(log, address, msg, ...) log->log(address, msg, ##__VA_ARGS__)
+    #define DEBUG_LOG(log, address, msg, ...) log->log(address, msg, ##__VA_ARGS__)
 
 #else
 
-	#define DEBUG_LOG(log, name, msg, ...)
+    #define DEBUG_LOG(log, name, msg, ...)
 
 #endif
 
 
-#endif 	/* NCLOUD_LOG_H */
+#endif  /* NCLOUD_LOG_H */

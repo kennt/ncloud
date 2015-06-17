@@ -7,18 +7,18 @@
  * the membership information.
  *
  * IMessageHandler
- *	An interface to handle messages that arrive on a certain connection.
+ *  An interface to handle messages that arrive on a certain connection.
  *
  * NetworkNode
- *	A placeholder to hold all connections/handlers/info for a particular
- *	network node (endpoint).
+ *  A placeholder to hold all connections/handlers/info for a particular
+ *  network node (endpoint).
  *
  *****/
 
 #ifndef NCLOUD_NETWORKNODE_H
 #define NCLOUD_NETWORKNODE_H
 
-#include "stdincludes.h"	
+#include "stdincludes.h"    
 #include "Params.h"
 #include "Network.h"
 #include "Member.h"
@@ -30,18 +30,18 @@
 class IMessageHandler
 {
 public:
-	virtual ~IMessageHandler() {}
+    virtual ~IMessageHandler() {}
 
-	// Initializes the MessageHandler.
-	virtual void start(const Address& address) = 0;
+    // Initializes the MessageHandler.
+    virtual void start(const Address& address) = 0;
 
-	// Called when a message has been received for this address.
-	virtual void onMessageReceived(const RawMessage *message) = 0;
+    // Called when a message has been received for this address.
+    virtual void onMessageReceived(const RawMessage *message) = 0;
 
-	// Called when "idle".  This is called after all queued messages
-	// have been processed (SimNetwork and SocketNetwork) and 
-	// also when the recv() call has timed out (SocketNetwork).
-	virtual void onTimeout() = 0;
+    // Called when "idle".  This is called after all queued messages
+    // have been processed (SimNetwork and SocketNetwork) and 
+    // also when the recv() call has timed out (SocketNetwork).
+    virtual void onTimeout() = 0;
 };
 
 // Describes what the connection is for
@@ -57,86 +57,86 @@ class NetworkNode
 {
 public:
 
-	// log and par are both owned at the application level and thus
-	// will be valid for the lifetime of this object.
-	//
-	NetworkNode(string name, Log *log, Params *par, shared_ptr<INetwork> network);
+    // log and par are both owned at the application level and thus
+    // will be valid for the lifetime of this object.
+    //
+    NetworkNode(string name, Log *log, Params *par, shared_ptr<INetwork> network);
 
-	// Registers the handler to handle messages received by thie connection.
-	// The conntype is used to identify the connection/handler so that 
-	// the application can lookup a particular connection.
-	// 
-	// The connection/handlers are kept in a map based on the 
-	// connection's address (thus the same connection cannot be used twice).
-	void registerHandler(ConnectType conntype,
-						 shared_ptr<IConnection> connection,
-						 shared_ptr<IMessageHandler> handler);
-	// Removes the connection/handler associated with the 
-	void unregisterHandler(const Address &address);
+    // Registers the handler to handle messages received by thie connection.
+    // The conntype is used to identify the connection/handler so that 
+    // the application can lookup a particular connection.
+    // 
+    // The connection/handlers are kept in a map based on the 
+    // connection's address (thus the same connection cannot be used twice).
+    void registerHandler(ConnectType conntype,
+                         shared_ptr<IConnection> connection,
+                         shared_ptr<IMessageHandler> handler);
+    // Removes the connection/handler associated with the 
+    void unregisterHandler(const Address &address);
 
 
-	// Initializes the node (prepares the node for running)
-	void nodeStart(const Address &joinAddress, int timeout);
+    // Initializes the node (prepares the node for running)
+    void nodeStart(const Address &joinAddress, int timeout);
 
-	// This looks for messages by calling recv() on each
-	// connection.  Pull messages off of the net and places them onto
-	// an internal queue.
-	void receiveMessages();
+    // This looks for messages by calling recv() on each
+    // connection.  Pull messages off of the net and places them onto
+    // an internal queue.
+    void receiveMessages();
 
-	// Takes messages off the queue and then calls the associated MessageHandler
-	// to process the messages.  And then calls the onTimeout() on the MessageHandler
-	// after all of the queued messages have been processed.
-	void processQueuedMessages();
+    // Takes messages off the queue and then calls the associated MessageHandler
+    // to process the messages.  And then calls the onTimeout() on the MessageHandler
+    // after all of the queued messages have been processed.
+    void processQueuedMessages();
 
-	string getName()	{ return this->name; }
+    string getName()    { return this->name; }
 
-	// Returns a list of addresses in use by this node.
-	vector<Address> getAddresses();
+    // Returns a list of addresses in use by this node.
+    vector<Address> getAddresses();
 
-	// Returns a connection for the given conntype.  In the presence of
-	// multiple entries with the same type, the return value is not defined.
-	shared_ptr<IConnection> getConnection(ConnectType conntype);
+    // Returns a connection for the given conntype.  In the presence of
+    // multiple entries with the same type, the return value is not defined.
+    shared_ptr<IConnection> getConnection(ConnectType conntype);
 
-	// Find the address for the given connection type
-	inline const Address address(ConnectType conntype)
-	{
-		return this->getConnection(conntype)->address();
-	}
+    // Find the address for the given connection type
+    inline const Address address(ConnectType conntype)
+    {
+        return this->getConnection(conntype)->address();
+    }
 
-	// Has the node failed?  Failure means that the node
-	// no longer sends/receives messages across all connections.
-	bool 		failed() const { return hasFailed; }
+    // Has the node failed?  Failure means that the node
+    // no longer sends/receives messages across all connections.
+    bool        failed() const { return hasFailed; }
 
-	// Fail this node (it will no longer send/receive messages).
-	void 		fail();
+    // Fail this node (it will no longer send/receive messages).
+    void        fail();
 
-	void 		quit()	{ receivedQuitMessage = true; }
-	bool		quitReceived() const { return receivedQuitMessage; }
+    void        quit()  { receivedQuitMessage = true; }
+    bool        quitReceived() const { return receivedQuitMessage; }
 
-	// MP1 stuff
-	MemberInfo 	member;
+    // MP1 stuff
+    MemberInfo  member;
 
-	// MP2 stuff
-	RingInfo 	ring;
+    // MP2 stuff
+    RingInfo    ring;
 
 protected:
 
-	struct HandlerInfo
-	{
-		ConnectType 				conntype;
-		shared_ptr<IConnection> 	connection;
-		shared_ptr<IMessageHandler>	handler;
-		shared_ptr<list<unique_ptr<RawMessage>>> queue;
-	};
+    struct HandlerInfo
+    {
+        ConnectType                 conntype;
+        shared_ptr<IConnection>     connection;
+        shared_ptr<IMessageHandler> handler;
+        shared_ptr<list<unique_ptr<RawMessage>>> queue;
+    };
 
-	bool 				hasFailed;
-	string 				name;	
-	map<Address, HandlerInfo> handlers;
-	Log *				log;
-	Params *			par;
-	weak_ptr<INetwork>	network;
-	int 				timeout;
-	bool 				receivedQuitMessage;
+    bool                hasFailed;
+    string              name;   
+    map<Address, HandlerInfo> handlers;
+    Log *               log;
+    Params *            par;
+    weak_ptr<INetwork>  network;
+    int                 timeout;
+    bool                receivedQuitMessage;
 };
 
 #endif /* NCLOUD_NETWORKNODE_H */
