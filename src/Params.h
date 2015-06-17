@@ -21,6 +21,11 @@ public:
 	Params();
 	void load(const char *filename);
 
+	string 	coordinatorAddress;
+	unsigned short coordinatorPort;
+
+	// Begin - SIMULATION PARAMS
+	// =====
 	// formerly MAX_NNB
 	int 	maxNumberOfNeighbors;
 
@@ -52,6 +57,9 @@ public:
 
 	// Moved to be part of the MP2 Application
 	//int 	allNodesJoined;
+
+	// =====
+	// End - SIMULATION PORTION
 
 	void	resetCurrtime() { globaltime = 0; }
 	int 	getCurrtime() { return globaltime; }

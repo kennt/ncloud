@@ -20,6 +20,7 @@
 
 class NetworkNode;
 struct Message;
+struct CommandMessage;
 
 struct RingEntry
 {
@@ -56,10 +57,10 @@ public:
 	// The server APIS are handled in the MessageHandler (since that is where
 	// they will receive the request).
 	//
-	void clientCreate(string key, string value);
-	void clientRead(string key);
-	void clientUpdate(string key, string value);
-	void clientDelete(string key);
+	void clientCreate(shared_ptr<CommandMessage> cmdmessage, string key, string value);
+	void clientRead(shared_ptr<CommandMessage> cmdmessage, string key);
+	void clientUpdate(shared_ptr<CommandMessage> cmdmessage, string key, string value);
+	void clientDelete(shared_ptr<CommandMessage> cmdmessage, string key);
 
 	// Find the addresses of the nodes that are resposible for the key
 	// This is in the order of the replicas

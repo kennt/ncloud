@@ -152,7 +152,7 @@ public:
 		return port;
 	}
 
-	string 	toString() const
+	string toString() const
 	{
 		return string_format("%d.%d.%d.%d:%d",
 			(ipaddr >> 24) & 0xFF,
@@ -160,25 +160,43 @@ public:
 			(ipaddr >> 8) & 0xFF,
 			ipaddr & 0xFF,
 			port
-			);
+			);		
 	}
 
-	// Parses a IPv4 address of the form "XXX.XXX.XXX.XXX:YYY" where XXX
-	// is an octet (from 0..255) and YYY is a port number.
+	string toAddressString() const
+	{
+		return string_format("%d.%d.%d.%d",
+			(ipaddr >> 24) & 0xFF,
+			(ipaddr >> 16) & 0xFF,
+			(ipaddr >> 8) & 0xFF,
+			ipaddr & 0xFF
+			);		
+	}
+
+	string toPortString() const
+	{
+		return string_format("%d", port);
+	}
+
+	// Parses a IPv4 address of the form "XXX.XXX.XXX.XXX" where XXX
+	// is an octet (from 0..255).
+	//
+	// This could be extended to IPv6 addresses, but those are
+	// more complicated than needs to be here.  Should use inet_pton().
 	//
 	// This function does a minimal amount of error checking.
 	//
-	void parse(string address)
+	void parse(const char *address, const char *port)
 	{
-		size_t	pos = address.find(":");
+		parse(address, static_cast<unsigned short>(stoi(port)));
+	}
 
-		if (pos == string::npos)
-			throw AddressException("missing ':'");
-
+	void parse(const char *address, unsigned short port)
+	{
 		// For simplicity, make this explicit, expect a
 		// full address
 		unsigned short a, b, c, d;
-		if (sscanf(address.substr(0, pos).c_str(), "%hu.%hu.%hu.%hu", &a, &b, &c, &d) != 4)
+		if (sscanf(address, "%hu.%hu.%hu.%hu", &a, &b, &c, &d) != 4)
 			throw AddressException("improper IP address format");
 
 		// Make sure that we're not passing in bogus addresses
@@ -187,8 +205,7 @@ public:
 
 		this->addrtype = AddressType::IPv4;
 		this->ipaddr = (a << 24) + (b << 16) + (c << 8) + d;
-		this->port = (unsigned short) stoi(address.substr(pos + 1,
-									 	   address.size()-pos-1));
+		this->port = port;
 	}
 
 protected:

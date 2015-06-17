@@ -18,7 +18,7 @@ template<>
  };
 
 NetworkNode::NetworkNode(string name, Log *log, Params *par, shared_ptr<INetwork> network)
-	: member(log, par), ring(log, par)
+	: member(log, par), ring(log, par), receivedQuitMessage(false)
 {
 	this->name = name;
 	this->log = log;

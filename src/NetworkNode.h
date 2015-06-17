@@ -47,7 +47,7 @@ public:
 // Describes what the connection is for
 // MP1 : MEMBER
 // MP2 : RING
-enum class ConnectType { MEMBER, RING };
+enum class ConnectType { MEMBER, RING, COMMAND };
 
 // This class represents a single network node (or a process).
 // This everything that belongs to one machine (or process)
@@ -110,6 +110,9 @@ public:
 	// Fail this node (it will no longer send/receive messages).
 	void 		fail();
 
+	void 		quit()	{ receivedQuitMessage = true; }
+	bool		quitReceived() const { return receivedQuitMessage; }
+
 	// MP1 stuff
 	MemberInfo 	member;
 
@@ -133,6 +136,7 @@ protected:
 	Params *			par;
 	weak_ptr<INetwork>	network;
 	int 				timeout;
+	bool 				receivedQuitMessage;
 };
 
 #endif /* NCLOUD_NETWORKNODE_H */

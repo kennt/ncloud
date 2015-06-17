@@ -42,6 +42,9 @@ void Params::load(const char *config_file) {
 		Json::Value	root;
 		config_doc >> root;		// read in the root node
 
+		coordinatorAddress = root.get("coordinatorAddress", "").asString();
+		coordinatorPort = (unsigned short) root.get("coordinatorPort", 0).asInt();
+
 		maxNumberOfNeighbors = root.get("maxNumberOfNodes", 0).asInt();
 		enableDropMessages = root.get("enableDropMessages", false).asBool();
 		singleFailure = root.get("singleFailure", false).asBool();

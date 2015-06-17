@@ -31,7 +31,7 @@ size_t RingInfo::hashFunction(const string key)
 //	(2) Finds the replicas of this key
 //	(3) Sends a message to the replica
 //
-void RingInfo::clientCreate(string key, string value)
+void RingInfo::clientCreate(shared_ptr<CommandMessage> cmdmessage, string key, string value)
 {
 	//
 	// Implement this
@@ -44,7 +44,7 @@ void RingInfo::clientCreate(string key, string value)
 //	(2) Finds the replicas of this key
 //	(3) Sends a message to the replica
 //
-void RingInfo::clientRead(string key)
+void RingInfo::clientRead(shared_ptr<CommandMessage> cmdmessage, string key)
 {
 	//
 	// Implement this
@@ -57,7 +57,7 @@ void RingInfo::clientRead(string key)
 //	(2) Finds the replicas of this key
 //	(3) Sends a message to the replica
 //
-void RingInfo::clientUpdate(string key, string value)
+void RingInfo::clientUpdate(shared_ptr<CommandMessage> cmdmessage, string key, string value)
 {
 	//
 	// Implement this
@@ -70,7 +70,7 @@ void RingInfo::clientUpdate(string key, string value)
 //	(2) Finds the replicas for this key
 //	(3) Sends a message to the replica
 //
-void RingInfo::clientDelete(string key)
+void RingInfo::clientDelete(shared_ptr<CommandMessage> cmdmessage, string key)
 {
 	//
 	// Implement this
@@ -123,7 +123,7 @@ vector<RingEntry> RingInfo::getMembershipList()
 		RingEntry 	re;
 		//$ TODO: The address of the ring protocol is always
 		// one port after the membership protocol
-		Address 	ringAddress(entry.address.getIPAddress(), 
+		Address 	ringAddress(entry.address.getIPv4Address(), 
 								entry.address.getPort() + 1);
 
 		re.address = ringAddress;

@@ -35,6 +35,19 @@ mp2: Log.o \
 		Ring.o
 	g++ -o Application MP2App.o Log.o Util.o SimNetwork.o Params.o NetworkNode.o MP1.o MP2.o jsoncpp.o Member.o Ring.o ${CFLAGS}
 
+socket: Log.o \
+		Util.o \
+		SocketNetwork.o \
+		Params.o \
+		NetworkNode.o \
+		SocketApp.o \
+		MP1.o \
+		MP2.o \
+		jsoncpp.o \
+		Member.o \
+		Ring.o \
+		Command.o
+	g++ -o Application SocketApp.o Log.o Util.o SocketNetwork.o Params.o NetworkNode.o MP1.o MP2.o jsoncpp.o Member.o Ring.o Command.o ${CFLAGS}
 
 test: TestMain.o \
 		TestNetwork.o \
@@ -62,6 +75,13 @@ SimNetwork.o: SimNetwork.cpp \
 		Params.h \
 		SparseMatrix.h
 	g++ -c SimNetwork.cpp ${CFLAGS}
+
+SocketNetwork.o: SocketNetwork.cpp \
+		SocketNetwork.h \
+		Network.h \
+		Params.h \
+		SparseMatrix.h
+	g++ -c SocketNetwork.cpp ${CFLAGS}
 
 Util.o: Util.cpp Util.h Network.h
 	g++ -c Util.cpp ${CFLAGS}
@@ -113,6 +133,20 @@ MP2App.o: MP2App.cpp \
 		MP2.h
 	g++ -c MP2App.cpp ${CFLAGS}
 
+SocketApp.o: SocketApp.cpp \
+		SocketApp.h \
+		stdincludes.h \
+		Network.h \
+		SocketNetwork.h \
+		Log.h \
+		Params.h \
+		NetworkNode.h \
+		Member.h \
+		Ring.h \
+		MP1.h \
+		MP2.h
+	g++ -c SocketApp.cpp ${CFLAGS}
+
 MP1.o:  MP1.cpp \
 		MP1.h \
 		stdincludes.h \
@@ -144,6 +178,16 @@ Ring.o: Ring.cpp \
 		Network.h \
 		NetworkNode.h
 	g++ -c Ring.cpp ${CFLAGS}
+
+Command.o: Command.cpp \
+		Command.h \
+		stdincludes.h \
+		Log.h \
+		Params.h \
+		NetworkNode.h \
+		Member.h \
+		Ring.h
+	g++ -c Command.cpp ${CFLAGS}
 
 clean:
 	rm -rf *.o Application dbg.log msgcount.log stats.log machine.log

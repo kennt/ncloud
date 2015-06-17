@@ -27,21 +27,21 @@ TEST_CASE("Address parsing", "[Address]")
 	Address 	addr;
 
 	SECTION("successful parsing test") {
-		addr.parse("100.101.102.103:80");
+		addr.parse("100.101.102.103", "80");
 		REQUIRE( addr.getIPv4Address() == 0x64656667 );
 		REQUIRE( addr.getPort() == 80 );
 	}
 
 	SECTION("Bad IP address formatting") {
 		// Improper IP address
-		REQUIRE_THROWS( addr.parse("100:90") );
-		REQUIRE_THROWS( addr.parse("100.1:90") );
-		REQUIRE_THROWS( addr.parse("100.2.3:90") );
-		REQUIRE_THROWS( addr.parse("100.300.3:90") );
-		REQUIRE_THROWS( addr.parse(":8080") );
+		REQUIRE_THROWS( addr.parse("100", "90") );
+		REQUIRE_THROWS( addr.parse("100.1", "90") );
+		REQUIRE_THROWS( addr.parse("100.2.3", "90") );
+		REQUIRE_THROWS( addr.parse("100.300.3", "90") );
+		REQUIRE_THROWS( addr.parse("", "8080") );
 
 		// Missing port
-		REQUIRE_THROWS( addr.parse("100") );
+		REQUIRE_THROWS( addr.parse("100", "") );
 	}
 }
 
