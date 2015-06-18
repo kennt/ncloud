@@ -16,6 +16,7 @@
 #include "Log.h"
 #include "Params.h"
 #include "NetworkNode.h"
+#include "Member.h"
 
 
 enum CommandType { CNONE = 0,
@@ -52,6 +53,9 @@ public:
     string          value;
     bool            success;
     string          errmsg;
+
+    // Used only for the CGETMEMBERS message
+    list<MemberListEntry>   memberList;
 
     Address         to;
     Address         from;

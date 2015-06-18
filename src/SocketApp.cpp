@@ -14,13 +14,21 @@
 int main(int argc, char *argv[])
 {
     if (argc != ARGS_COUNT) {
-        cout << "Configuration (i.e., *.conf) file is required" << endl;
+        cout << "Requires three parameters: config_file ip_address port_number";
+        cout << endl;
         return FAILURE;
     }
 
     // We expect write failures to occur but we want to handle them where 
     // the error occurs rather than in a SIGPIPE handler.
-    signal(SIGPIPE, SIG_IGN);
+    struct sigaction act;
+
+    memset(&act, 0, sizeof(act));
+    sigemptyset(&act.sa_mask);
+    act.sa_handler = SIG_IGN;
+
+    sigaction(SIGPIPE, &act, NULL);
+
 
     // If you want a deterministic scenario, then enter
     // a value here rather than time(NULL)
@@ -61,6 +69,7 @@ void Application::init(const char *filename, const Address &base)
 {
     par = new Params();
     par->load(filename);
+    par->resetCurrtime();
 
     joinAddress.parse(par->coordinatorAddress.c_str(), par->coordinatorPort);
 
@@ -99,7 +108,7 @@ void Application::init(const char *filename, const Address &base)
 
 void Application::run()
 {
-    node->nodeStart(joinAddress, 0);
+    node->nodeStart(joinAddress, 1);
     cout << "node is using:";
 
     auto conn = node->getConnection(ConnectType::MEMBER);
@@ -108,9 +117,12 @@ void Application::run()
           cout << endl;
 
     while(!node->quitReceived() && !node->failed()) {
+        par->updateCurrtime();
         node->receiveMessages();
         node->processQueuedMessages();
     }
+    
+    cout << "quit received? " << node->quitReceived() << endl;
 
     // dump statistics
     socketnet->writeMsgcountLog();

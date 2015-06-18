@@ -81,7 +81,7 @@ string read_raw(std::istream& is)
 template<>
 void write_raw(std::ostream& os, const string& value)
 {
-    write_raw<int>(os, value.size());
+    write_raw<int>(os, static_cast<int>(value.size()));
     write_chars_raw(os, value.c_str(), value.size());
 }
 

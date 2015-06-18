@@ -61,12 +61,18 @@ public:
     // =====
     // End - SIMULATION PORTION
 
-    void    resetCurrtime() { globaltime = 0; }
+    void    resetCurrtime() { starttime = time(nullptr); globaltime = 0; }
     int     getCurrtime() { return globaltime; }
+
+    // Use this only in the simulation
     void    addToCurrtime(int inc) { globaltime += inc; }
 
+    // Use this only in the socket app
+    void    updateCurrtime() { globaltime = static_cast<int>(time(nullptr) - starttime); }
+
 protected:
-    int globaltime;
+    time_t  starttime;
+    int     globaltime;
 };
 
 

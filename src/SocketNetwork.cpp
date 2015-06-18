@@ -73,7 +73,7 @@ int SocketConnection::getAddress(const Address & address,
     // relies on IPv4.
 
     // Is this address already in our cache?
-    if (!addToCache) {
+    if (addToCache) {
         auto it = sockets.find(address);
         if (it != sockets.end()) {
             return it->second->fd;
@@ -216,12 +216,12 @@ void SocketConnection::send(const RawMessage *rawmsg)
     if (it == sockets.end())
         throw NetworkException("");
 
-    int bytesSent = ::sendto(socketDescriptor,
-                             rawmsg->data.get(),
-                             rawmsg->size,
-                             0,
-                             (struct sockaddr *) &(it->second->sa),
-                             it->second->sa_size);
+    size_t bytesSent = ::sendto(socketDescriptor,
+                                rawmsg->data.get(),
+                                rawmsg->size,
+                                0,
+                                (struct sockaddr *) &(it->second->sa),
+                                static_cast<socklen_t>(it->second->sa_size));
 
     if (bytesSent == -1)
         throw NetworkException(errno, "error sending");
@@ -272,7 +272,7 @@ unique_ptr<RawMessage> SocketConnection::recv(int timeout)
         }
 
         //$ TODO: assumes that everything is received at once
-        int bytesRcvd = ::recvfrom(socketDescriptor,
+        size_t bytesRcvd = ::recvfrom(socketDescriptor,
                                    buf,
                                    sizeof buf,
                                    0,
