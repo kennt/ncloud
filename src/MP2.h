@@ -19,12 +19,9 @@
 #include "stdincludes.h"
 #include "Log.h"
 #include "Params.h"
+#include "Network.h"
+#include "Ring.h"
 #include "NetworkNode.h"
-
-
-
-enum RingMessageType { RINGNONE=0, CREATE, READ, UPDATE, DELETE, REPLY, READREPLY };
-enum ReplicaType { REPLNONE=-1, PRIMARY=0, SECONDARY, TERTIARY };
 
 class NetworkNode;
 

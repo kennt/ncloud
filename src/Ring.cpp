@@ -169,6 +169,14 @@ void RingInfo::updateRing()
     // greater than zero and if there has been a change in the ring.
 }
 
+int RingInfo::getCount(ReplicaType replica)
+{
+    //
+    // Implement this
+    //
+    return 0;
+}
+
 // This runs the stabilization protocol in case of Node joins and leaves.
 // It ensures that there are always 3 copies of all keys in the DHT at at
 // all times. The function does the following:

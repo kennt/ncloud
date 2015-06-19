@@ -22,6 +22,10 @@ class NetworkNode;
 struct Message;
 struct CommandMessage;
 
+enum RingMessageType { RINGNONE=0, CREATE, READ, UPDATE, DELETE, REPLY, READREPLY };
+enum ReplicaType { REPLNONE=-1, PRIMARY=0, SECONDARY, TERTIARY };
+
+
 struct RingEntry
 {
     Address     address;
@@ -68,6 +72,9 @@ public:
     vector<RingEntry> getMembershipList();
 
     void updateRing();
+
+    // Returns the number of dictionary entries of this replica type.
+    int getCount(ReplicaType replica);
 
 protected:
     size_t                  hashCode;

@@ -22,6 +22,7 @@ void CommandMessage::load(const RawMessage *raw)
     switch(this->type) {
         case CommandType::CPING:
         case CommandType::CGETMEMBERS:
+        case CommandType::CGETREPLICACOUNT:
         case CommandType::CQUIT:
             // Nothing else to do here
             break;
@@ -87,6 +88,15 @@ unique_ptr<RawMessage> CommandMessage::toRawMessage(const Address &from, const A
                     members.append(member);
                 }
                 root["members"] = members;
+            }
+            break;
+        case CommandType::CGETREPLICACOUNT:
+            {
+                Json::Value counts;
+                for (auto value : this->counts) {
+                    counts.append(value);
+                }
+                root["counts"] = counts;
             }
             break;
         case CommandType::CREAD:
@@ -158,6 +168,15 @@ void CommandMessageHandler::onMessageReceived(const RawMessage *raw)
             if (!node->member.inGroup)
                 reply->errmsg = "not a member of a group";
             reply->memberList = node->member.memberList;
+            break;
+        case CommandType::CGETREPLICACOUNT:
+            // This is a success only if we are part of a group
+            reply = command->makeReply(node->member.inGroup);
+                reply->errmsg = "not a member of a group";
+            reply->counts.clear();
+            reply->counts.push_back(node->ring.getCount(ReplicaType::PRIMARY));
+            reply->counts.push_back(node->ring.getCount(ReplicaType::SECONDARY));
+            reply->counts.push_back(node->ring.getCount(ReplicaType::TERTIARY));
             break;
         case CommandType::CCREATE:
             node->ring.clientCreate(command, command->key, command->value);

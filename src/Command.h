@@ -22,6 +22,7 @@
 enum CommandType { CNONE = 0,
     CPING,          // ping the node
     CGETMEMBERS,    // retrieve the list of members
+    CGETREPLICACOUNT, // retrieve replica counts of hashtabel entries
     CQUIT,          // tell the node to quit
     CCREATE,        // tell the node to create an entry
     CREAD,          // tell the node to read an entry
@@ -56,6 +57,9 @@ public:
 
     // Used only for the CGETMEMBERS message
     list<MemberListEntry>   memberList;
+
+    // Used only for the CGETREPLICACOUNT message
+    vector<int>     counts;
 
     Address         to;
     Address         from;
