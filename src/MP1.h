@@ -23,8 +23,8 @@
 #include "NetworkNode.h"
 
 
-const int TREMOVE 	= 20;
-const int TFAIL 	= 5;
+extern const int TREMOVE;
+extern const int TFAIL;
 
 
 enum MEMBER_MSGTYPE { NONE=0, JOINREQ };

@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
 	}
 	catch (exception & e)
 	{
-		cout << e.what() << endl;
+		cout << "exception: " << e.what() << endl;
 	}
 
 	return SUCCESS;

@@ -54,3 +54,33 @@ unique_ptr<RawMessage> rawMessageFromStream(const Address &from,
 
 	return raw;
 }
+
+void write_chars_raw(ostream& os, const char *p, size_t length)
+{
+	os.write(p, length);
+}
+
+void read_chars_raw(istream& is, char *p, size_t length)
+{
+	is.read(p, length);
+}
+
+template<>
+string read_raw(std::istream& is)
+{
+    //$ TODO: remove static buffer
+    static char buf[1024];
+
+    size_t len = static_cast<size_t>(read_raw<int>(is));
+    assert(len < sizeof(buf));
+
+    read_chars_raw(is, buf, len);
+    return string(buf, len);
+}
+
+template<>
+void write_raw(std::ostream& os, const string& value)
+{
+    write_raw<int>(os, static_cast<int>(value.size()));
+    write_chars_raw(os, value.c_str(), value.size());
+}
