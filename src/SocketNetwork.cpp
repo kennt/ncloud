@@ -259,12 +259,12 @@ unique_ptr<RawMessage> SocketConnection::recv(int timeout)
 
         n = ::select(socketDescriptor+1, &fds, NULL, NULL, &tv);
 
-        // MacOS may return EINTR on timeout
-        if ((n == 0) || (n == EINTR))
+        if (n == 0)
             return nullptr;
         if (n == -1) {
+            // MacOS may return EINTR on timeout
             // EAGAIN == no data available, try again
-            if (errno == EAGAIN)
+            if ((errno == EAGAIN) || (errno == EINTR))
                 return nullptr;
             else if (errno == EPIPE)
                 throw NetworkException("connection closed");
