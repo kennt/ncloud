@@ -302,7 +302,7 @@ void Application::initTestKVPairs()
         log->log(node->getConnection(ConnectType::RING)->address(),
                  "CREATE OPERATION KEY: %s VALUE: %s at time: %d",
                     key.c_str(), value.c_str(), par->getCurrtime());
-        node->ring.clientCreate(key, value);
+        node->ring.clientCreate(nullptr, key, value);
     }
 }
 
@@ -324,7 +324,7 @@ void Application::deleteTest()
         log->log(node->getConnection(ConnectType::RING)->address(),
                  "DELETE OPERATION KEY: %s VALUE: %s at time: %d",
                     it->first.c_str(), it->second.c_str(), par->getCurrtime());
-        node->ring.clientDelete(it->first);
+        node->ring.clientDelete(nullptr, it->first);
     }
 
     //
@@ -341,7 +341,7 @@ void Application::deleteTest()
         log->log(node->getConnection(ConnectType::RING)->address(),
                  "DELETE OPERATION KEY: %s at time: %d",
                  invalidKey.c_str(), par->getCurrtime());
-        node->ring.clientDelete(invalidKey);
+        node->ring.clientDelete(nullptr, invalidKey);
     }
 }
 
@@ -368,7 +368,7 @@ void Application::readTest()
         log->log(node->address(ConnectType::RING),
                  "READ OPERATION KEY: %s VALUE: %s at time: %d",
                  firstPair->first.c_str(), firstPair->second.c_str(), par->getCurrtime());
-        node->ring.clientRead(firstPair->first);
+        node->ring.clientRead(nullptr, firstPair->first);
     }
 
     // End of Test 1
@@ -439,7 +439,7 @@ void Application::readTest()
         log->log(node->getConnection(ConnectType::RING)->address(),
                  "READ OPERATION KEY: %s VALUE: %s at time: %d",
                  firstPair->first.c_str(), firstPair->second.c_str(), par->getCurrtime());
-        node->ring.clientRead(firstPair->first);
+        node->ring.clientRead(nullptr, firstPair->first);
 
         failedOneNode = false;
     }
@@ -524,7 +524,7 @@ void Application::readTest()
                      "READ OPERATION KEY: %s VALUE: %s at time: %d",
                      firstPair->first.c_str(), firstPair->second.c_str(), par->getCurrtime());
             // This read should fail since at least quorum nodes are not alive
-            node->ring.clientRead(firstPair->first);
+            node->ring.clientRead(nullptr, firstPair->first);
         }
 
         /**
@@ -542,7 +542,7 @@ void Application::readTest()
                      firstPair->first.c_str(), firstPair->second.c_str(),
                      par->getCurrtime());
             // This read should be successful
-            node->ring.clientRead(firstPair->first);
+            node->ring.clientRead(nullptr, firstPair->first);
         }
     }
 
@@ -591,7 +591,7 @@ void Application::readTest()
                  firstPair->first.c_str(), firstPair->second.c_str(),
                  par->getCurrtime());
         // This read should fail since at least quorum nodes are not alive
-        node->ring.clientRead(firstPair->first);
+        node->ring.clientRead(nullptr, firstPair->first);
     }
 
     /** end of test 4 **/
@@ -611,7 +611,7 @@ void Application::readTest()
                  "READ OPERATION KEY: %s at time: %d",
                  invalidKey.c_str(), par->getCurrtime());
         // This read should fail since at least quorum nodes are not alive
-        node->ring.clientRead(invalidKey);
+        node->ring.clientRead(nullptr, invalidKey);
     }
 
     /** end of test 5 **/
@@ -643,7 +643,7 @@ void Application::updateTest()
         log->log(node->address(ConnectType::RING),
                  "UPDATE OPERATION KEY: %s VALUE: %s at time: %d",
                  kvEntry->first.c_str(), newValue.c_str(), par->getCurrtime());
-        node->ring.clientUpdate(kvEntry->first, newValue);
+        node->ring.clientUpdate(nullptr, kvEntry->first, newValue);
     }
 
     // end of test 1
@@ -712,7 +712,7 @@ void Application::updateTest()
         log->log(node->address(ConnectType::RING),
                  "UPDATE OPERATION KEY: %s VALUE: %s at time: %d",
                  kvEntry->first.c_str(), newValue.c_str(), par->getCurrtime());
-        node->ring.clientUpdate(kvEntry->first, newValue);
+        node->ring.clientUpdate(nullptr, kvEntry->first, newValue);
 
         failedOneNode = false;
     }
@@ -787,7 +787,7 @@ void Application::updateTest()
                      "UPDATE OPERATION KEY: %s VALUE: %s at time: %d",
                      kvEntry->first.c_str(), newValue.c_str(), par->getCurrtime());
             // This update should fail since at least quorum nodes are not alive
-            node->ring.clientUpdate(kvEntry->first, newValue);
+            node->ring.clientUpdate(nullptr, kvEntry->first, newValue);
         }
 
         //
@@ -804,7 +804,7 @@ void Application::updateTest()
                      "UPDATE OPERATION KEY: %s VALUE: %s at time: %d",
                      kvEntry->first.c_str(), newValue.c_str(), par->getCurrtime());
             // This update should be successful
-            node->ring.clientUpdate(kvEntry->first, newValue);
+            node->ring.clientUpdate(nullptr, kvEntry->first, newValue);
         }
     }
 
@@ -856,7 +856,7 @@ void Application::updateTest()
                  "UPDATE OPERATION KEY: %s VALUE: %s at time: %d",
                  kvEntry->first.c_str(), newValue.c_str(), par->getCurrtime());
         // This read should fail since at least quorum nodes are not alive
-        node->ring.clientUpdate(kvEntry->first, newValue);
+        node->ring.clientUpdate(nullptr, kvEntry->first, newValue);
     }
 
     // end of test 4
@@ -877,7 +877,7 @@ void Application::updateTest()
                  "UPDATE OPERATION KEY: %s VALUE: %s at time: %d",
                  invalidKey.c_str(), invalidValue.c_str(), par->getCurrtime());
         // This read should fail since at least quorum nodes are not alive
-        node->ring.clientUpdate(invalidKey, invalidValue);
+        node->ring.clientUpdate(nullptr, invalidKey, invalidValue);
     }
 
     // end of test 5

@@ -61,27 +61,27 @@ protected:
 class NetworkException : public exception
 {
 public:
-    NetworkException(const char *description)
-    {
-        this->description = description;
-        this->error = 0;
-    }
-    NetworkException(const string desc)
-    {
-        this->description = desc;
-        this->error = 0;
-    }
-    NetworkException(int err, const char *description)
-    {
-        this->error = err;
-        this->description = string_format("%s (%d)", description, err);
-    }
+	NetworkException(const char *description)
+	{
+		this->description = string_format("%s", description);
+		this->error = 0;
+	}
+	NetworkException(const string desc)
+	{
+		this->description = desc;
+		this->error = 0;
+	}
+	NetworkException(int err, const char *description)
+	{
+		this->error = err;
+		this->description = string_format("%s (%d)", description, err);
+	}
 
-    virtual const char * what() const throw()
-    {   return description.c_str(); }
+	virtual const char * what() const throw()
+	{	return description.c_str(); }
 
-    virtual int errcode()
-    {   return this->error; }
+	virtual int errcode()
+	{ 	return this->error; }
 
 protected:
     string  description;

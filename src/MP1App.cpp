@@ -10,27 +10,27 @@
 
 int main(int argc, char *argv[])
 {
-    if (argc != ARGS_COUNT) {
-        cout << "Configuration (i.e., *.conf) file is required" << endl;
-        return FAILURE;
-    }
+	if (argc != ARGS_COUNT) {
+		cout << "Configuration (i.e., *.conf) file is required" << endl;
+		return FAILURE;
+	}
 
-    // If you want a deterministic scenario, then enter
-    // a value here rather than time(NULL)
-    srand((unsigned int)time(NULL));
+	// If you want a deterministic scenario, then enter
+	// a value here rather than time(NULL)
+	srand((unsigned int)time(NULL));
 
-    try {
-        Application app;
+	try {
+		Application app;
 
-        app.init(argv[1]);
-        app.run();
-    }
-    catch (exception & e)
-    {
-        cout << e.what() << endl;
-    }
+		app.init(argv[1]);
+		app.run();
+	}
+	catch (exception & e)
+	{
+		cout << "exception: " << e.what() << endl;
+	}
 
-    return SUCCESS;
+	return SUCCESS;
 }
 
 Application::Application() :
