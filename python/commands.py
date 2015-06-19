@@ -34,13 +34,17 @@ class Commands(object):
     type_map = {CNONE: "",
                 CPING: "ping",
                 CGETMEMBERS: "get_members",
-                CGETREPLICACOUNT, "get_replica_count",
+                CGETREPLICACOUNT: "get_replica_count",
                 CQUIT: "quit",
                 CCREATE: "create",
                 CREAD: "read",
                 CUPDATE: "update",
                 CDELETE: "delete",
                 CREPLY: "reply"}
+
+    replica_map = {0: "primary",
+                   1: "secondary",
+                   2: "tertiary"}
 
     # transaction id for messages.
     transid = 1
@@ -98,10 +102,16 @@ class Commands(object):
             print "  members    : size=" + str(len(message["members"]))
             pos = 0
             for member in message["members"]:
-                tmp = "               [{0}]  {1}:{2}  ts= {3}  hb= {4}".format(
+                tmp = "      [{0}]  {1}:{2}  ts= {3}  hb= {4}".format(
                     pos, member["a"], member["p"], member["ts"], member["hb"])
                 print tmp
                 pos += 1
+        if "counts" in message:
+            print "  counts     : size=" + str(len(message["counts"]))
+            for pos in xrange(len(message["counts"])):
+                tmp = "      {0} = {1}".format(
+                    self.replica_map[pos], message["counts"][pos])
+                print tmp
 
         print "raw message ===="
         print json.dumps(message, indent=2)
