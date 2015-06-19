@@ -63,7 +63,7 @@ class NetworkException : public exception
 public:
 	NetworkException(const char *description)
 	{
-		this->description = description;
+		this->description = string_format("%s", description);
 		this->error = 0;
 	}
 	NetworkException(const string desc)

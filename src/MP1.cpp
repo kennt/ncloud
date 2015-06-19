@@ -10,6 +10,10 @@
 #include "NetworkNode.h"
 #include "json/json.h"
 
+const int TREMOVE 	= 20;
+const int TFAIL 	= 5;
+
+
 
 // Converts the data in a JoinRequestMessage structure into a RawMessage (which
 // is ready to be sent over the wire).
