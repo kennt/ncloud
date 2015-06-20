@@ -58,6 +58,6 @@ To solve MP1, the student should only need to change Member.* and MP1.*.
 ## Future work
 * Better documentation
 * Implement MP2App.cpp (see the mp2 branch).
-* Create a version that uses sockets
+* Create a version that uses sockets (see the socket branch)
 * Better testing of the higher level code
 
