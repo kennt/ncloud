@@ -43,7 +43,8 @@ unique_ptr<RawMessage> rawMessageFromStream(const Address &from,
 	auto raw = make_unique<RawMessage>();
 
 	size_t dataSize = stream.tellp();
-	const char * data = stream.str().c_str();
+    string sdata = stream.str();
+	const char * data = sdata.c_str();
 	unique_ptr<byte[]> temp(new byte[dataSize]);
 	memcpy(temp.get(), data, dataSize);
 
