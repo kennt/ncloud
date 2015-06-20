@@ -216,12 +216,12 @@ void SocketConnection::send(const RawMessage *rawmsg)
     if (it == sockets.end())
         throw NetworkException("");
 
-    size_t bytesSent = ::sendto(socketDescriptor,
-                                rawmsg->data.get(),
-                                rawmsg->size,
-                                0,
-                                (struct sockaddr *) &(it->second->sa),
-                                static_cast<socklen_t>(it->second->sa_size));
+    ssize_t bytesSent = ::sendto(socketDescriptor,
+                                 rawmsg->data.get(),
+                                 rawmsg->size,
+                                 0,
+                                 (struct sockaddr *) &(it->second->sa),
+                                 static_cast<socklen_t>(it->second->sa_size));
 
     if (bytesSent == -1)
         throw NetworkException(errno, "error sending");
