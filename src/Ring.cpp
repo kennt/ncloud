@@ -94,7 +94,7 @@ vector<Address> RingInfo::findReplicas(const string key)
 			addressVector.emplace_back(ring.at(2).address);
 		}
 		else {
-			for (int i=1; i<ring.size(); i++) {
+			for (size_t i=1; i<ring.size(); i++) {
 				RingEntry entry = ring.at(i);
 				if (pos <= entry.hashcode) {
 					addressVector.emplace_back(entry.address);
@@ -123,7 +123,7 @@ vector<RingEntry> RingInfo::getMembershipList()
 		RingEntry 	re;
 		//$ TODO: The address of the ring protocol is always
 		// one port after the membership protocol
-		Address 	ringAddress(entry.address.getIPAddress(), 
+		Address 	ringAddress(entry.address.getIPv4Address(), 
 								entry.address.getPort() + 1);
 
 		re.address = ringAddress;
@@ -158,7 +158,7 @@ void RingInfo::updateRing()
 	// Step 2: Construct the ring
 	//
 	sort(curMemberList.begin(), curMemberList.end(),
-		[](RingEntry & lhs, RingEntry & rhs) {
+		[](const RingEntry & lhs, const RingEntry & rhs) {
 			return lhs.hashcode < rhs.hashcode;
 		});
 

@@ -314,7 +314,7 @@ void Application::deleteTest()
 		 << " valid keys.... ... .. . ." << endl;
 
 	auto it = testKVPairs.begin();
-	for ( int i = 0; i < testKVPairs.size()/2; i++ ) {
+	for (size_t i = 0; i < testKVPairs.size()/2; i++ ) {
 		it++;
 
 		// Step 1.a. Find a node that is alive
