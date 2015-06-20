@@ -308,41 +308,41 @@ void Application::initTestKVPairs()
 
 void Application::deleteTest()
 {
-    //
-    // Test 1: Delete half of the KV pairs
-    cout << endl << "Deleting " << testKVPairs.size()/2
-         << " valid keys.... ... .. . ." << endl;
+	//
+	// Test 1: Delete half of the KV pairs
+	cout << endl << "Deleting " << testKVPairs.size()/2
+		 << " valid keys.... ... .. . ." << endl;
 
-    auto it = testKVPairs.begin();
-    for ( int i = 0; i < testKVPairs.size()/2; i++ ) {
-        it++;
+	auto it = testKVPairs.begin();
+	for (size_t i = 0; i < testKVPairs.size()/2; i++ ) {
+		it++;
 
-        // Step 1.a. Find a node that is alive
-        shared_ptr<NetworkNode> node = randomAliveNode();
+		// Step 1.a. Find a node that is alive
+		shared_ptr<NetworkNode> node = randomAliveNode();
 
-        // Step 1.b. Issue a delete operation
-        log->log(node->getConnection(ConnectType::RING)->address(),
-                 "DELETE OPERATION KEY: %s VALUE: %s at time: %d",
-                    it->first.c_str(), it->second.c_str(), par->getCurrtime());
-        node->ring.clientDelete(nullptr, it->first);
-    }
+		// Step 1.b. Issue a delete operation
+		log->log(node->getConnection(ConnectType::RING)->address(),
+				 "DELETE OPERATION KEY: %s VALUE: %s at time: %d",
+				 	it->first.c_str(), it->second.c_str(), par->getCurrtime());
+		node->ring.clientDelete(nullptr, it->first);
+	}
 
-    //
-    // Test 2: Delete a non-existent key
-    //
-    {
-        cout << endl << "Deleting an invalid key.... ... .. . ." << endl;
-        string invalidKey = "invalidKey";
+	//
+	// Test 2: Delete a non-existent key
+	//
+	{
+		cout << endl << "Deleting an invalid key.... ... .. . ." << endl;
+		string invalidKey = "invalidKey";
 
-        // Step 2.a. Find a node that is alive
-        shared_ptr<NetworkNode> node = randomAliveNode();
+		// Step 2.a. Find a node that is alive
+		shared_ptr<NetworkNode> node = randomAliveNode();
 
-        // Step 2.b. Issue a delete operation
-        log->log(node->getConnection(ConnectType::RING)->address(),
-                 "DELETE OPERATION KEY: %s at time: %d",
-                 invalidKey.c_str(), par->getCurrtime());
-        node->ring.clientDelete(nullptr, invalidKey);
-    }
+		// Step 2.b. Issue a delete operation
+		log->log(node->getConnection(ConnectType::RING)->address(),
+				 "DELETE OPERATION KEY: %s at time: %d",
+				 invalidKey.c_str(), par->getCurrtime());
+		node->ring.clientDelete(nullptr, invalidKey);
+	}
 }
 
 void Application::readTest()
