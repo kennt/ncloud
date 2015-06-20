@@ -227,7 +227,7 @@ void SocketConnection::send(const RawMessage *rawmsg)
         throw NetworkException(errno, "error sending");
 
     //$ TODO: assume we can send everything
-    if (bytesSent < rawmsg->size)
+    if (bytesSent < (ssize_t) rawmsg->size)
         throw NetworkException("partial message sent!");
 }
 
