@@ -128,14 +128,6 @@ shared_ptr<CommandMessage> CommandMessage::makeReply(bool success)
 //
 void CommandMessageHandler::start(const Address &joinAddress)
 {
-    auto node = netnode.lock();
-    if (!node)
-        throw AppException("");
-
-    node->member.inited = true;
-
-    // Initialize the ring (we should have a connection by this point)
-    node->ring.init(node.get(), connection->address());
 }
 
 // This is a callback and is called when the connection has received
