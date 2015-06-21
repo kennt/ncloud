@@ -30,44 +30,19 @@ const int MAX_BUFFER_SIZE = 16*1024;
 
 class SocketNetwork;
 
-struct SocketInfo
+struct SockAddrInfo
 {
-    SocketInfo() : fd(-1), sa_size(0)
+    SockAddrInfo() : sa_size(0)
     {
         memset(&sa, 0, sizeof(sa));
     }
 
-    SocketInfo(int fd, struct sockaddr *sa, size_t sa_len);
-
-    ~SocketInfo()
+    SockAddrInfo(struct sockaddr *sa, size_t sa_len)
     {
-        if (fd != -1)
-            ::close(fd);
+        ::memcpy(&(this->sa), sa, sa_len);
+        sa_size = sa_len;
     }
 
-    // Write copy and move explicitly
-    // Copying not allowed
-    //SocketInfo(const SocketInfo &) = delete;
-    //SocketInfo& operator =(const SocketInfo &) = delete;
-
-    // move constructor
-    SocketInfo(SocketInfo && other) noexcept
-    {
-        SocketInfo  temp;
-        *this = std::move(other);
-        other = std::move(temp);
-    }
-
-    // move assignment
-    SocketInfo& operator =(SocketInfo && other) noexcept
-    {
-        std::swap(fd, other.fd);
-        std::swap(sa, other.sa);
-        std::swap(sa_size, other.sa_size);
-        return *this;
-    }
-
-    int                 fd;
     struct sockaddr_storage sa;
     size_t              sa_size;
 };
@@ -113,17 +88,17 @@ protected:
     int             socketDescriptor;
 
     // cache of sockets/addresses that we send to
-    map<Address, shared_ptr<SocketInfo>>    sockets;
+    map<Address, SockAddrInfo>    sockaddrs;
 
     // Looks up an address and returns a file descriptor
-    // The calling code owns the descriptor.
+    // The calling code owns the descriptor.  The address is also
+    // added to the cache.  Free up the descriptor returned using ::close(fd);
+    // Call this for a server-side socket (one that receives packets).
     int lookupAddress(const Address & address);
 
-    // Looks up an address and adds it to the sockets cache.
+    // Looks up an address and adds it to the sockaddr cache
+    // Call this for a client-side address lookup (one that sends packets).
     void cacheAddress(const Address & address);
-
-    // Internal api that is used for address lookup.
-    int getAddress(const Address &address, bool doBind, bool addToCache);
 };
 
 

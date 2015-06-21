@@ -108,7 +108,7 @@ void Application::init(const char *filename, const Address &base)
 
 void Application::run()
 {
-    node->nodeStart(joinAddress, 1);
+    node->nodeStart(joinAddress, 1 /* timeout in secs */);
     cout << "node is using:";
 
     auto conn = node->getConnection(ConnectType::MEMBER);

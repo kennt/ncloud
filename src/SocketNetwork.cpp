@@ -49,89 +49,6 @@ Address sockaddrToAddress(struct sockaddr *sa)
 }
 
 
-SocketInfo::SocketInfo(int fd, struct sockaddr *sa, size_t sa_len)
-    : fd(fd), sa_size(sa_len)
-{
-    memcpy(&(this->sa), sa, sa_len);
-}
-
-int SocketConnection::lookupAddress(const Address & address)
-{
-    return getAddress(address, true /* doBind */, false /* addToCache */);
-}
-
-void SocketConnection::cacheAddress(const Address & address)
-{
-    getAddress(address, false /* doBind */, true /* addToCache */);
-}
-
-int SocketConnection::getAddress(const Address & address,
-                                 bool doBind,
-                                 bool addToCache)
-{
-    // This is IPv4/IPv6 friendly, however the Address
-    // relies on IPv4.
-
-    // Is this address already in our cache?
-    if (addToCache) {
-        auto it = sockets.find(address);
-        if (it != sockets.end()) {
-            return it->second->fd;
-        }
-    }
-
-    struct addrinfo     hints;
-    struct addrinfo *   servinfo;
-    int                 rv;
-    int                 errcode = 0;
-    int                 fd = -1;
-
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_protocol = IPPROTO_UDP;
-    hints.ai_socktype = SOCK_DGRAM;
-    hints.ai_flags = AI_PASSIVE;
-
-    if ((rv = ::getaddrinfo(address.toAddressString().c_str(),
-                            address.toPortString().c_str(),
-                            &hints,
-                            &servinfo)) != 0) {
-        throw NetworkException(
-            string_format("getaddrinfo failed: %s", gai_strerror(rv)).c_str());
-    }   
-
-    for (auto p = servinfo; p != NULL; p = p->ai_next) {
-        int     sockfd = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (sockfd == -1) {
-            errcode = errno;
-            continue;
-        }
-        if (doBind && ::bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
-            errcode = errno;
-            ::close(sockfd);
-            continue;
-        }
-
-        // Add the entry into our cache
-        // The SocketInfo takes control of the file descriptor, fd.
-        fd = sockfd;
-        if (addToCache) {
-            shared_ptr<SocketInfo> si =
-                make_shared<SocketInfo>(fd, p->ai_addr, p->ai_addrlen);
-            sockets.emplace(address, si);
-        }
-        break;
-    }
-    ::freeaddrinfo(servinfo);
-
-    if (fd == -1) {
-        throw NetworkException(errcode, "failed to bind a socket");
-    }
-
-    return fd;
-}
-
-
 SocketConnection::SocketConnection(Params *par, weak_ptr<SocketNetwork> socketnet)
     : par(par),
     socketnet(socketnet),
@@ -212,16 +129,16 @@ void SocketConnection::send(const RawMessage *rawmsg)
     cacheAddress(rawmsg->toAddress);
 
     // Pull the socket info out of the cache
-    auto it = sockets.find(rawmsg->toAddress);
-    if (it == sockets.end())
+    auto it = sockaddrs.find(rawmsg->toAddress);
+    if (it == sockaddrs.end())
         throw NetworkException("");
 
     ssize_t bytesSent = ::sendto(socketDescriptor,
                                  rawmsg->data.get(),
                                  rawmsg->size,
                                  0,
-                                 (struct sockaddr *) &(it->second->sa),
-                                 static_cast<socklen_t>(it->second->sa_size));
+                                 (struct sockaddr *) &(it->second.sa),
+                                 static_cast<socklen_t>(it->second.sa_size));
 
     if (bytesSent == -1)
         throw NetworkException(errno, "error sending");
@@ -291,6 +208,91 @@ unique_ptr<RawMessage> SocketConnection::recv(int timeout)
         throw NetworkException("the network object has been deleted");      
     }
     return raw;
+}
+int SocketConnection::lookupAddress(const Address & address)
+{
+    // This is IPv4/IPv6 friendly, however the Address
+    // relies on IPv4.
+    struct addrinfo     hints;
+    struct addrinfo *   servinfo;
+    int                 rv;
+    int                 errcode = 0;
+    int                 fd = -1;
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_protocol = IPPROTO_UDP;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_flags = AI_PASSIVE;
+
+    if ((rv = ::getaddrinfo(address.toAddressString().c_str(),
+                            address.toPortString().c_str(),
+                            &hints,
+                            &servinfo)) != 0) {
+        throw NetworkException(
+            string_format("getaddrinfo failed: %s", gai_strerror(rv)).c_str());
+    }
+
+    for (auto p = servinfo; p != NULL; p = p->ai_next) {
+        int     sockfd = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (sockfd == -1) {
+            errcode = errno;
+            continue;
+        }
+        if (::bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
+            errcode = errno;
+            ::close(sockfd);
+            continue;
+        }
+
+        fd = sockfd;
+        break;
+    }
+    ::freeaddrinfo(servinfo);
+
+    if (fd == -1) {
+        throw NetworkException(errcode, "failed to bind a socket");
+    }
+
+    return fd;
+}
+
+void SocketConnection::cacheAddress(const Address & address)
+{
+    // This is IPv4/IPv6 friendly, however the Address
+    // relies on IPv4.
+
+    // Is this already in the cache?
+    auto it = sockaddrs.find(address);
+    if (it != sockaddrs.end()) {
+        return;
+    }
+
+    struct addrinfo     hints;
+    struct addrinfo *   servinfo;
+    int                 rv;
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_protocol = IPPROTO_UDP;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_flags = AI_PASSIVE;
+
+    if ((rv = ::getaddrinfo(address.toAddressString().c_str(),
+                            address.toPortString().c_str(),
+                            &hints,
+                            &servinfo)) != 0) {
+        throw NetworkException(
+            string_format("getaddrinfo failed: %s", gai_strerror(rv)).c_str());
+    }
+
+    // Just pull the first servinfo off of the list, we're not binding to the
+    // address, so just use it.
+    auto            p = servinfo;
+    SockAddrInfo    si(p->ai_addr, p->ai_addrlen);
+    sockaddrs.emplace(address, si);
+
+    ::freeaddrinfo(servinfo);
 }
 
 
