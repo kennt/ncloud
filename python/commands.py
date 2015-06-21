@@ -112,9 +112,11 @@ class Commands(object):
                 tmp = "      {0} = {1}".format(
                     self.replica_map[pos], message["counts"][pos])
                 print tmp
-
-        print "raw message ===="
-        print json.dumps(message, indent=2)
+        #
+        # Useful for debugging the messages
+        #
+        # print "raw message ===="
+        # print json.dumps(message, indent=2)
 
     def send_message(self, address, message):
         message["transid"] = self.transid
@@ -132,33 +134,41 @@ class Commands(object):
 
     def send_ping(self, address):
         self.send_message(address, {"type": Commands.CPING})
+        self.wait_for_response()
 
     def send_getmembers(self, address):
         self.send_message(address, {"type": Commands.CGETMEMBERS})
+        self.wait_for_response()
 
     def send_getreplicacount(self, address):
         self.send_message(address, {"type": Commands.CGETREPLICACOUNT})
+        self.wait_for_response()
 
     def send_quit(self, address):
         self.send_message(address, {"type": Commands.CQUIT})
+        self.wait_for_response()
 
     def send_create(self, address, key, value):
         self.send_message(address, {"type": Commands.CCREATE,
                                     "key": str(key),
                                     "value": str(value)})
+        self.wait_for_response()
 
     def send_read(self, address, key):
         self.send_message(address, {"type": Commands.CREAD,
                                     "key": str(key)})
+        self.wait_for_response()
 
     def send_update(self, address, key, value):
         self.send_message(address, {"type": Commands.CUPDATE,
                                     "key": str(key),
                                     "value": str(value)})
+        self.wait_for_response()
 
     def send_delete(self, address, key):
         self.send_message(address, {"type": Commands.CDELETE,
                                     "key": str(key)})
+        self.wait_for_response()
 
     def wait_for_response(self):
         data, address = self.sock.recvfrom(4096)
