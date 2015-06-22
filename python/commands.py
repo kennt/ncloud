@@ -92,12 +92,18 @@ class Commands(object):
         message = json.loads(json_message)
         print "message ===="
         print "  type       : " + self.type_map[message["type"]]
-        print "  replytype  : " + self.type_map[message.get("replytype", 0)]
+        if 'replytype' in message:
+            print "  replytype  : " + \
+                self.type_map[message.get("replytype", 0)]
         print "  transid    : " + str(message["transid"])
-        print "  success    : " + str(message.get("success", ""))
-        print "  key        : " + message.get("key", "")
-        print "  value      : " + message.get("value", "")
-        print "  errmsg     : " + message.get("errmgs", "")
+        if 'success' in message:
+            print "  success    : " + str(message.get("success", ""))
+        if 'key' in message:
+            print "  key        : " + message.get("key", "")
+        if 'value' in message:
+            print "  value      : " + message.get("value", "")
+        if 'errmsg' in message:
+            print "  errmsg     : " + message.get("errmgs", "")
         if "members" in message:
             print "  members    : size=" + str(len(message["members"]))
             pos = 0
