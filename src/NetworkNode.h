@@ -23,6 +23,7 @@
 #include "Network.h"
 #include "Member.h"
 #include "Ring.h"
+#include "Context.h"
 
 // Abstract interface for the message callbacks.  This is called by
 // the network code when a message is received or during an idle period.
@@ -118,6 +119,9 @@ public:
 
     // MP2 stuff
     RingInfo    ring;
+
+    // Raft protocol stuff
+    Raft::Context     context;
 
 protected:
 

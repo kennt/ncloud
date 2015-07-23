@@ -29,7 +29,10 @@ class Commands(object):
     CREAD = 6
     CUPDATE = 7
     CDELETE = 8
-    CREPLY = 9
+    CRAFT_GETLEADER = 9
+    CRAFT_ADDSERVER = 10
+    CRAFT_REMOVESERVER = 11
+    CREPLY = 999
 
     type_map = {CNONE: "",
                 CPING: "ping",
@@ -118,6 +121,10 @@ class Commands(object):
                 tmp = "      {0} = {1}".format(
                     self.replica_map[pos], message["counts"][pos])
                 print tmp
+        if "address" in message:
+            print "  address    : " + message["address"]
+            print "  port       : " + str(message["port"])
+
         #
         # Useful for debugging the messages
         #
@@ -174,6 +181,22 @@ class Commands(object):
     def send_delete(self, address, key):
         self.send_message(address, {"type": Commands.CDELETE,
                                     "key": str(key)})
+        self.wait_for_response()
+
+    def send_getleader(self, address):
+        self.send_message(address, {"type": Commands.CRAFT_GETLEADER })
+        self.wait_for_response()
+
+    def send_addserver(self, address, newServer):
+        self.send_message(address, {"type": Commands.CRAFT_ADDSERVER,
+                                    "address": newServer[0],
+                                    "port": newServer[1]})
+        self.wait_for_response()
+
+    def send_removeserver(self, address, oldServer):
+        self.send_message(address, {"type": Comman.CRAFT_REMOVESERVER,
+                                    "address": oldServer[0],
+                                    "port": oldServer[1]})
         self.wait_for_response()
 
     def wait_for_response(self):

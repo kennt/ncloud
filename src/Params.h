@@ -61,6 +61,19 @@ public:
     // =====
     // End - SIMULATION PORTION
 
+
+    // Begin - RAFT PARAMS
+    // =====
+
+    // Timeout before starting a new election
+    int     electionTimeout;
+
+    // Timeout before sending a heartbeat
+    int     heartbeatTimeout;
+
+    // =====
+    // End - RAFT PARAMS
+
     void    resetCurrtime() { starttime = time(nullptr); globaltime = 0; }
     int     getCurrtime() { return globaltime; }
 

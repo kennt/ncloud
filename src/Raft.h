@@ -13,12 +13,18 @@
 #ifndef NCLOUD_RAFT_H
 #define NCLOUD_RAFT_H
 
+#include <functional>
+#include <unordered_map>
+
 #include "stdincludes.h"
 #include "Log.h"
 #include "Params.h"
 #include "json/json.h"
+#include "Network.h"
 #include "NetworkNode.h"
-
+#include "Context.h"
+#include "Command.h"
+#include "Util.h"
 
 class NetworkNode;
 
@@ -34,175 +40,43 @@ enum MessageType {
     APPEND_ENTRIES,
     APPEND_ENTRIES_REPLY,
     REQUEST_VOTE,
-    REQUEST_VOTE_REPLY
+    REQUEST_VOTE_REPLY,
     ADD_SERVER,
     ADD_SERVER_REPLY,
     REMOVE_SERVER,
     REMOVE_SERVER_REPLY
 };
 
-// ================
-// Enumeration for operations performed by the log entries.
-//
-// Since we are using the log to store operations on the cluster
-// membership list.  All we are have are add server and remove server.
-// (Note that operations are performed one server address at a time).
-// ================
-enum Command {
-    CMD_NONE = 0,
-    CMD_ADD_SERVER,
-    CMD_REMOVE_SERVER
-};
-
-
-// ================
-// System states (for the state table)
-// ================
-
-enum State {
-    // This is the uninitialized state, the state has not
-    // joined the cluster yet (hasn't send the ADD_SERVER message).
-    NONE = 0,
-
-    // We are trying to join the cluster, but have not received
-    // a reply yet.
-    JOINING = 1,
-
-    // Normal RAFT states
-    FOLLOWER = 2,
-    CANDIDATE = 3,
-    LEADER = 4
-}
-
-// Since we are using Raft only for the membership protocol,
-// We are only storing only the membership information in the
-// log.
-// This are the contents of an individual log entry.
-struct MemberLogEntry {
-    // term when the entry was received by the leader
-    int         termReceived;
-
-
-    // Log entry data
-    // ==============
-
-    // Since we are only using the Raft protocol for cluster
-    // membership, we are storing a delta of changes to the 
-    // cluster membership. (nodes added and node deleted).
-    //
-    // We could store the entire list, but I think this makes
-    // it more interesting to see how things work.
-    //
-    // 
-
-    // The operation being performed.
-    Command     command;
-
-    // This is the address being operated on (either added or deleted).
-    Address     address;
-
-    MemberLogEntry() : termReceived(0)
-    {}
-
-};
-
-
-// Implements the behavior needed for a Raft-based log.
-// Note that the indexes are all 1-based!
-class RaftLog
-{
-public:
-    RaftLog() : prevIndex(0), prevTerm(0)
-    {}
-
-    // returns true if the entry at position pos matches term
-    bool    contains(int pos, int term) const;
-    
-    void    append();
-    size_t  size() const;
-    bool    empty() const;
-
-    // APIs for compaction?
-protected:
-    vector<MemberLogEntry>  entries;
-
-    // Compaction?
-    // index of last discarded entry (initialized to 0)
-    int     prevIndex;
-
-    // term of last discarded entry (initialized to 0)
-    int     prevTerm;
-
-    // latest cluster memberhsip configuration up through prevIndex
-    vector<Adddress>    prevAddresses;
-};
-
-
-// Volatile state stored on a leader node
-// (this should actally stored as a map<Address, LeaderStateEntry>,
-// since we are storing information on each server).
-// (Reinitialized after election)
-struct LeaderStateEntry {
-    // Index of the next log entry to send to this server
-    // (initialized to leader last log index + 1)
-    int         nextIndex;
-
-    // Index of highest log entry known to be replicated on
-    // server (initialized to 0, increases monotonically)
-    int         matchIndex;
-
-    LeaderState() : nextIndex(0), matchIndex(0)
-    {}
-};
-
-// Volatile state stored on all servers
-struct ServerState {
-    // Index of highest log entry known to be committed
-    // (initialized to 0, increases monotonically)
-    int         commitIndex;
-
-    // Index of highest log entry applied to state machine
-    // (initialized to 0, increase monotonically)
-    int         lastAppliedIndex;
-
-    MemberState() : commitIndex(0), lastAppliedIndex(0)
-    {}
-};
-
-// Persistent state for the system
-// (Updated on stable storage before responding to RPCs)
-struct SavedState {
-    // Current leader address
-    Address     leaderAddress;
-
-
-    // The latest term that this server has seen (initialized to 0 on
-    // first boot, increases monotonically).
-    int         currentTerm;
-
-    // Candidate that received a vote in the current term (or null if none)
-    Address     candidateAddress;
-
-    // Membership changes are communicated as log changes.  See Sect 3.4.
-    // log entries, each log entry contains command for the state machine,
-    // and term when entry was received by the leader (first index is 1).
-    vector<MemberLogEntry>  membershipLog;
-
-    SavedState() : currentTerm(0)
-    {}
-
-    // Serialization APIs
-    Json::Value toJson();
-    void load(const Json::Value& value);
-};
-
-
 // ==================
 // Messages
 // ==================
 
-struct AppendEntriesMessage
+class Message
 {
+public:
+    MessageType     msgtype;
+    int             transId;
+
+    Message(MessageType mt) : msgtype(mt), transId(0) {}
+
+    virtual ~Message() = default;
+    Message(Message &&) = default;
+    Message& operator=(Message&&) = default;
+    Message(const Message&) = default;
+    Message& operator=(const Message&) = default;
+
+    // Loads the data from the stringstream into this object.
+    virtual void load(istringstream& ss) = 0;
+
+    // Creates a RawMessage and serializes the data for this object
+    // into the RawMessage data.  Ownership of the RawMessage is passed
+    // to the caller.
+    virtual unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to) = 0; 
+};
+
+class AppendEntriesMessage : public Message
+{
+public:
     // Implied MessageType::APPEND_ENTRIES
 
     // leader's term
@@ -219,25 +93,21 @@ struct AppendEntriesMessage
 
     // Log entries to store (empty for heartbeat, may send
     // more than one for efficiency)
-    vector<MemberLogEntry>  entries;
+    vector<RaftLogEntry>  entries;
 
     // leader's commit index
     int         leaderCommit;
 
-    AppendEntriesMessage() : term(0), prevLogIndex(0), prevLogTerm(0), leaderCommit(0)
+    AppendEntriesMessage() : Message(APPEND_ENTRIES), term(0), prevLogIndex(0), prevLogTerm(0), leaderCommit(0)
     {}
 
-    // Loads the data from the stringstream into this object.
-    void load(istringstream& ss);
-
-    // Creates a RawMessage and serializes the data for this object
-    // into the RawMessage data.  Ownership of the RawMessage is passed
-    // to the caller.
-    unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);
+    virtual void load(istringstream& ss) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
-struct AppendEntriesReply
+class AppendEntriesReply : public Message
 {
+public:
     // Implied MessageType::APPEND_ENTRIES_REPLY
 
     // currentTerm, for the leader to update itself
@@ -246,19 +116,16 @@ struct AppendEntriesReply
     // true if follower contained entry matching prevLogIndex and prevLogTerm
     bool        success;
 
-    AppendEntriesReply() : term(0), success(false)
+    AppendEntriesReply() : Message(APPEND_ENTRIES_REPLY), term(0), success(false)
     {}
 
-    // Loads the data from the stringstream into this object.
-    void load(istringstream& ss);
-
-    // Creates a RawMessage and serializes the data for this object
-    // into the RawMessage data.  Ownership of the RawMessage is passed
-    // to the caller.
-    unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);
+    virtual void load(istringstream& ss) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
-struct RequestVoteMessage {
+class RequestVoteMessage : public Message
+{
+public:
     // Implied MessageType::REQUEST_VOTE
 
     // candidate's term
@@ -274,14 +141,16 @@ struct RequestVoteMessage {
     int         lastLogTerm;
 
     
-    RequestVoteMessage() : term(0), lastLogIndex(0), lastLogTerm(0)
+    RequestVoteMessage() : Message(REQUEST_VOTE), term(0), lastLogIndex(0), lastLogTerm(0)
     {}
 
-    void load(istringstream& ss);
-    unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);        
+    virtual void load(istringstream& ss) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
-struct RequestVoteReply {
+class RequestVoteReply : public Message
+{
+public:
     // Implied MessageType::REQUEST_VOTE_REPLY
 
     // currentTerm, for candidate to update itself
@@ -290,76 +159,138 @@ struct RequestVoteReply {
     // true means the candidate received the vote
     bool        voteGranted;
 
-    RequestVoteReply() : term(0), voteGranted(false)
+    RequestVoteReply() : Message(REQUEST_VOTE_REPLY), term(0), voteGranted(false)
     {}
 
-    void load(istringstream& ss);
-    unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);            
+    virtual void load(istringstream& ss) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
-struct AddServerMessage {
+class AddServerMessage : public Message
+{
+public:
+    // Implied MessageType::ADD_SERVER
+
     // Address of server to add to configuration
     Address     newServer;
 
-    void load(istringstream& ss);
-    unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);            
+    AddServerMessage() : Message(ADD_SERVER) {}
+
+    virtual void load(istringstream& ss) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
-struct AddServerReply {
+class AddServerReply : public Message
+{
+public:
+    // Implied MessageType::ADD_SERVER_REPLY
+
     // true if server was added succesfully
     bool        status;
 
     // Address of recent leader, if known
     Address     leaderHint;
 
-    AddServerReply() : status(false) 
+    AddServerReply() : Message(ADD_SERVER_REPLY), status(false) 
     {}
 
-    void load(istringstream& ss);
-    unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);            
+    virtual void load(istringstream& ss) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
 
-struct RemoveServerMessage {
+class RemoveServerMessage : public Message
+{
+public:
+    // Implied MessageType::REMOVE_SERVER
+
     // Address of server to remove from configutation
     Address     oldServer;
 
-    void load(istringstream& ss);
-    unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);            
+    RemoveServerMessage() : Message(REMOVE_SERVER) {}
+
+    virtual void load(istringstream& ss) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
 
-struct RemoveServerReply {
+class RemoveServerReply : public Message
+{
+public:
+    // Implied MessageType::REMOVE_SERVER_REPLY
+
     // true if server was removed successfully
     bool        status;
 
     // Address of recent leader, if known
     Address     leaderHint;
 
-    RemoveServerReply() : status(false) 
+    RemoveServerReply() : Message(REMOVE_SERVER_REPLY), status(false) 
     {}
 
-    void load(istringstream& ss);
-    unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);            
+    virtual void load(istringstream& ss) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
 
+// The RaftMessageHandler uses message IDs as a way to distringuish RPC replies.
+// Due to the network, replies may be received out-of-order.  Thus we use
+// this map to keep track of our outstanding transactions.
+//
+// Also, messages that are received after the timeout has passed are dropped
+// with no further notificqtion.  The callbacks are optional.  Only one of the
+// onTimeout() on onReply() will be called.
+//
+struct Transaction
+{
+    int         transId;
+
+    int         timeSent;
+    int         timeout;
+
+    // The original message that was sent
+    Address     toAddress;
+    shared_ptr<Message> message;
+
+    // Optional function to call on timeout
+    std::function<void (Transaction *trans)> onTimeout;
+
+    // Optional function to call when a reply is received
+    std::function<void (Transaction *trans, shared_ptr<Message> reply)> onReply;
+};
+
+
+// The MessageHandler for the Raft protocol.  This replaces the normal
+// message-handling protocol for Group Membership.
+//
 class RaftMessageHandler: public IMessageHandler
 {
 public:
+    // The log, par, and store are direct pointers, and the
+    // objects are expected to live beyond the lifetime
+    // of the MessageHandlers.
+    // Since these belong to the system, this is a reliable
+    // assumption.
+    //
     RaftMessageHandler(Log *log, 
                       Params *par,
+                      ContextStoreInterface *store,
                       shared_ptr<NetworkNode> netnode,
                       shared_ptr<IConnection> connection)
-        : log(log), par(par), netnode(netnode), connection(connection), timeout(0),
-        joinTimeout(0), nextHeartbeat(0)
+        : log(log), par(par), store(store), netnode(netnode), connection(connection),
+        electionTimeout(0), heartbeatTimeout(0), nextHeartbeat(0)
     {
-    }
+    };
 
-    virtual ~RaftMessageHandler() {}
+    virtual ~RaftMessageHandler() {};
 
     // Initializes the MessageHandler, if needed. This will be called
     // before onMessageReceived() or onTimeout() will be called.
+    //
+    // Call this with a zero'ed address (0.0.0.0:0) for the first
+    // node in the cluster to startup.  Otherwise call with an address
+    // of any node within the cluster.
+    // (otherwise we don't know how to find the cluster).
     virtual void start(const Address &address) override;    
 
     // This is called when a message has been received.  This may be
@@ -372,46 +303,47 @@ public:
     // Performs the action to join a group (sending a JoinRequest message).
     void joinGroup(const Address& address);
 
-    // Change the state and perform any actions needed
-    void stateChange(State newState);
-
     // Handlers for the individual messages
     void onAppendEntries(const Address& from, istringstream& ss);
-    void onRequstVote(const Address& from, istringstream& ss);
+    void onRequestVote(const Address& from, istringstream& ss);
     void onAddServer(const Address& from, istringstream& ss);
     void onAddServerReply(const Address& from, istringstream& ss);
+
+    // Handlers for command messages
+    // i.e. those messages received via JSON command messages
+    void onAddServerCommand(shared_ptr<CommandMessage> command, const Address& address);
+    void onRemoveServerCommand(shared_ptr<CommandMessage> command, const Address& address);
+
+    // Transaction apis
+    void openTransaction(int transId,
+                         int timeout,
+                         const Address& to,
+                         shared_ptr<Message> message);
+    void closeTransaction(int transId);
+
+    // State manipulation APIs
+    void applyLogEntry(const RaftLogEntry& entry);
 
 protected:
     Log *                   log;
     Params *                par;
+    ContextStoreInterface * store;
     weak_ptr<NetworkNode>   netnode;
     shared_ptr<IConnection> connection;
-    int                     timeout;
+    int                     electionTimeout;
+    int                     heartbeatTimeout;
 
-    State                   currentState;
-
-    // Volatile state (on all servers)
-    ServerState             serverState;
-
-    // Persistent state (on all servers)
-    SavedState              savedState;
-
-    // Volatile state (only on leaders)
-    map<Address, LeaderStateEntry>  servers;
-
-    // This is what is maintained by raft
-    // The logEntries dictate the changes made to the address list
-    RaftLog                 logEntries;
+    // This can be built from the log by executing all
+    // of the log entries.
     vector<Address>         addresses;
-
-    // This timeout is used upon joining.  If we do not receive
-    // a reply by this timeout, then we cannot contact a leader
-    // If this is 0, ignore
-    int                     joinTimeout;
 
     // The time to send out the next heartbeat, if set to 0
     // then this will never trigger.
     int                     nextHeartbeat;
+
+    // List of currently open transactions
+    //$ TODO: maybe keep sorted based on timeout?
+    map<int, Transaction>   transaction;
 };
 
 }

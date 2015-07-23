@@ -13,3 +13,13 @@ void MemberInfo::addToMemberList(const Address &address, int timestamp, long hea
     MemberListEntry entry = {address, timestamp, heartbeat};
     memberList.push_back(entry);
 }
+
+void MemberInfo::removeFromMemberList(const Address &address)
+{
+	for (auto it = memberList.begin(); it != memberList.end(); it++) {
+		if (it->address == address) {
+			memberList.erase(it);
+			break;
+		}
+	}
+}

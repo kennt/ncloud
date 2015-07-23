@@ -28,7 +28,13 @@ enum CommandType { CNONE = 0,
     CREAD,          // tell the node to read an entry
     CUPDATE,        // tell the node to update an entry
     CDELETE,        // tell the node to delete an entry
-    CREPLY          // the reply for a command
+
+    // Raft Commands
+    CRAFT_GETLEADER, // find what server this node thinks is the leader
+    CRAFT_ADDSERVER, // Add a server to the membership
+    CRAFT_REMOVESERVER, // Remove a server
+
+    CREPLY = 999    // the reply for a command
 };
 
 class NetworkNode;
@@ -44,7 +50,7 @@ public:
     unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to);
 
     CommandType     type;
-    int             transid;
+    int             transId;
 
     // if type is CREPLY, then replytype contains the
     // type of the message that we are replying to.
@@ -60,6 +66,9 @@ public:
 
     // Used only for the CGETREPLICACOUNT message
     vector<int>     counts;
+
+    // Used for CRAFT_XXX messages
+    Address         address;
 
     Address         to;
     Address         from;

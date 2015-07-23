@@ -8,17 +8,6 @@
 
 #include "NetworkNode.h"
 
-namespace std {
-	template<>
- 	struct hash<Address> {
- 	public:
- 		size_t operator()(const Address &x) const
- 		{
- 			return hash<unsigned int>()(x.ipaddr) ^ hash<unsigned short>()(x.port);
- 		}
- 	};
-}
-
 NetworkNode::NetworkNode(string name, Log *log, Params *par, shared_ptr<INetwork> network)
     : member(log, par), ring(log, par), receivedQuitMessage(false)
 {

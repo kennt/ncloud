@@ -17,7 +17,7 @@ void CommandMessage::load(const RawMessage *raw)
     this->type = static_cast<CommandType>(root.get("type", 0).asInt());
     this->from = raw->fromAddress;
     this->to = raw->toAddress;
-    this->transid = root.get("transid", 0).asInt();
+    this->transId = root.get("transid", 0).asInt();
 
     switch(this->type) {
         case CommandType::CPING:
@@ -48,6 +48,15 @@ void CommandMessage::load(const RawMessage *raw)
                 this->key = root.get("key", "").asString();
             }
             break;
+        case CommandType::CRAFT_GETLEADER:
+        case CommandType::CRAFT_ADDSERVER:
+        case CommandType::CRAFT_REMOVESERVER:
+            {
+                this->address.parse(
+                    root.get("address", "0.0.0.0").asString().c_str(),
+                    static_cast<unsigned short>(root.get("port", 0).asInt()));
+            }
+            break;
         default:
             throw NetworkException(string_format("Unknown command message:%d", this->type).c_str());
             break;
@@ -63,7 +72,7 @@ unique_ptr<RawMessage> CommandMessage::toRawMessage(const Address &from, const A
     // fields common to all
     root["type"] = CommandType::CREPLY;
     root["replytype"] = this->replytype;
-    root["transid"] = this->transid;
+    root["transid"] = this->transId;
     root["success"] = this->success;
     if (!this->success)
         root["errmsg"] = this->errmsg;
@@ -103,6 +112,14 @@ unique_ptr<RawMessage> CommandMessage::toRawMessage(const Address &from, const A
             if (this->success)
                 root["value"] = this->value;
             break;
+        case CommandType::CRAFT_GETLEADER:
+        case CommandType::CRAFT_ADDSERVER:
+        case CommandType::CRAFT_REMOVESERVER:
+            {
+                root["address"] = this->address.toAddressString();
+                root["port"] = this->address.getPort();
+            }
+            break;
         default:
             throw NetworkException(string_format("Unknown reply type:%d", this->replytype).c_str());
             break;
@@ -116,7 +133,7 @@ shared_ptr<CommandMessage> CommandMessage::makeReply(bool success)
     auto reply = make_shared<CommandMessage>();
     reply->type = CommandType::CREPLY;
     reply->replytype = this->type;
-    reply->transid = this->transid;
+    reply->transId = this->transId;
     reply->success = success;
     reply->to = this->from;
     reply->from = this->to;
@@ -164,6 +181,7 @@ void CommandMessageHandler::onMessageReceived(const RawMessage *raw)
         case CommandType::CGETREPLICACOUNT:
             // This is a success only if we are part of a group
             reply = command->makeReply(node->member.inGroup);
+            if (!node->member.inGroup)
                 reply->errmsg = "not a member of a group";
             reply->counts.clear();
             reply->counts.push_back(node->ring.getCount(ReplicaType::PRIMARY));
@@ -181,6 +199,18 @@ void CommandMessageHandler::onMessageReceived(const RawMessage *raw)
             break;
         case CommandType::CDELETE:
             node->ring.clientDelete(command, command->key);
+            break;
+        case CommandType::CRAFT_GETLEADER:
+            reply = command->makeReply(true);
+            reply->address = node->context.leaderAddress;            
+            break;
+        case CommandType::CRAFT_ADDSERVER:
+            //$ TODO: send an AddServer request to the leader
+            // Forward this request to our Raft MessageHnalder
+            
+            break;
+        case CommandType::CRAFT_REMOVESERVER:
+            //% TODO: send a RemoveServer request to the leader
             break;
         default:
             break;

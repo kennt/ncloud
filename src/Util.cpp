@@ -85,3 +85,34 @@ void write_raw(std::ostream& os, const string& value)
     write_raw<int>(os, static_cast<int>(value.size()));
     write_chars_raw(os, value.c_str(), value.size());
 }
+
+template<>
+Address read_raw(std::istream& is)
+{
+    //$ TODO: support IPv6
+    int     ipaddr = read_raw<int>(is);
+    unsigned short   port = read_raw<unsigned short>(is);
+
+    return Address(ipaddr, port);
+}
+
+template<>
+void write_raw(std::ostream& os, const Address& value)
+{
+    //$ TODO: support IPv6
+    write_raw<int>(os, value.getIPv4Address());
+    write_raw<unsigned short>(os, value.getPort());
+}
+
+template<>
+bool read_raw(std::istream& is)
+{
+    int t = read_raw<int>(is);
+    return t == 1;
+}
+
+template<>
+void write_raw(std::ostream& os, const bool& value)
+{
+    write_raw<int>(os, value ? 1 : 0);
+}

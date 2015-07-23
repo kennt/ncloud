@@ -59,7 +59,7 @@ protected:
 // debug output.
 #ifdef DEBUG
 
-    #define DEBUG_LOG(log, address, msg, ...) log->log(address, msg, ##__VA_ARGS__)
+    #define DEBUG_LOG(log, address, msg, ...) do { if (log) { log->log(address, msg, ##__VA_ARGS__); }} while(false)
 
 #else
 

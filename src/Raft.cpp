@@ -10,8 +10,7 @@
 #include "NetworkNode.h"
 #include "json/json.h"
 
-const int TREMOVE 	= 20;
-const int TFAIL 	= 5;
+// Timeout for the join operation
 const int JOIN_TIMEOUT = 10;
 
 using namespace Raft;
@@ -19,31 +18,95 @@ using namespace Raft;
 unique_ptr<RawMessage> AppendEntriesMessage::toRawMessage(const Address &from,
                                                           const Address& to)
 {
-    return nullptr;
+    stringstream    ss;
+
+    write_raw<int>(ss, static_cast<int>(this->msgtype));
+    write_raw<int>(ss, this->transId);
+
+    write_raw<int>(ss, this->term);
+    write_raw<Address>(ss, this->leaderAddress);
+    write_raw<int>(ss, this->prevLogIndex);
+    write_raw<int>(ss, this->prevLogTerm);
+    write_raw<int>(ss, this->leaderCommit);
+    write_raw<int>(ss, static_cast<int>(this->entries.size()));
+    for (auto & logEntry : entries) {
+        logEntry.write(ss);
+    }
+
+    return rawMessageFromStream(from, to, ss);
 }
 
-void AppendEntriesMessage::load(istringstream& ss)
+void AppendEntriesMessage::load(istringstream& is)
 {
+    this->msgtype = static_cast<MessageType>(read_raw<int>(is));
+    this->transId = read_raw<int>(is);
+    assert(this->msgtype == MessageType::APPEND_ENTRIES);
+
+    this->term = read_raw<int>(is);
+    this->leaderAddress = read_raw<Address>(is);
+    this->prevLogIndex = read_raw<int>(is);
+    this->prevLogTerm = read_raw<int>(is);
+    this->leaderCommit = read_raw<int>(is);
+
+    size_t size = static_cast<size_t>(read_raw<int>(is));
+    this->entries.clear();
+    for (size_t i=0; i<size; i++) {
+        RaftLogEntry    logEntry;
+        logEntry.read(is);
+        this->entries.push_back(logEntry);
+    }
 }
 
 unique_ptr<RawMessage> AppendEntriesReply::toRawMessage(const Address &from,
                                                         const Address& to)
 {
-    return nullptr;
+    stringstream    ss;
+
+    write_raw<int>(ss, static_cast<int>(this->msgtype));
+    write_raw<int>(ss, this->transId);
+
+    write_raw<int>(ss, this->term);
+    write_raw<bool>(ss, this->success);
+
+    return rawMessageFromStream(from, to, ss);
 }
 
-void AppendEntriesReply::load(istringstream& ss)
+void AppendEntriesReply::load(istringstream& is)
 {
+    this->msgtype = static_cast<MessageType>(read_raw<int>(is));
+    this->transId = read_raw<int>(is);
+    assert(this->msgtype == MessageType::APPEND_ENTRIES_REPLY);
+
+    this->term = read_raw<int>(is);
+    this->success = read_raw<bool>(is);
 }
 
 unique_ptr<RawMessage> RequestVoteMessage::toRawMessage(const Address &from,
                                                         const Address& to)
 {
-    return nullptr;
+    stringstream    ss;
+
+    write_raw<int>(ss, static_cast<int>(this->msgtype));
+    write_raw<int>(ss, this->transId);
+
+    write_raw<int>(ss, this->term);
+    write_raw<Address>(ss, this->candidateAddress);
+    write_raw<int>(ss, this->lastLogIndex);
+    write_raw<int>(ss, this->lastLogTerm);
+
+    return rawMessageFromStream(from, to, ss);
 }
 
-void RequestVoteMessage::load(istringstream& ss)
+void RequestVoteMessage::load(istringstream& is)
 {
+    this->msgtype = static_cast<MessageType>(read_raw<int>(is));
+    this->transId = read_raw<int>(is);
+    assert(this->msgtype == MessageType::REQUEST_VOTE);
+
+    this->term = read_raw<int>(is);
+    this->candidateAddress = read_raw<Address>(is);
+    this->lastLogIndex = read_raw<int>(is);
+    this->lastLogTerm = read_raw<int>(is);
 }
 
 // Converts the data in a RequestVoteReply structure into a RawMessage (which
@@ -56,9 +119,11 @@ unique_ptr<RawMessage> RequestVoteReply::toRawMessage(const Address &from,
 {
     stringstream    ss;
 
-    write_raw<int>(ss, static_cast<int>(MessageType::REQUEST_VOTE_REPLY));
+    write_raw<int>(ss, static_cast<int>(this->msgtype));
+    write_raw<int>(ss, this->transId);
+
     write_raw<int>(ss, this->term);
-    write_raw<int>(ss, this->voteGranted ? 1 : 0);
+    write_raw<bool>(ss, this->voteGranted);
 
     return rawMessageFromStream(from, to, ss);
 }
@@ -67,25 +132,115 @@ unique_ptr<RawMessage> RequestVoteReply::toRawMessage(const Address &from,
 // RequestVoteReply.  It is assumed that the position of the stream is
 // at the head of the message.
 //
-void RequestVoteReply::load(istringstream& ss)
+void RequestVoteReply::load(istringstream& is)
 {
-    int     msgtype = read_raw<int>(ss);
-    if (msgtype != MessageType::REQUEST_VOTE_REPLY)
-        throw NetworkException("incorrect message type");
+    this->msgtype = static_cast<MessageType>(read_raw<int>(is));
+    this->transId = read_raw<int>(is);
+    assert(this->msgtype == MessageType::REQUEST_VOTE_REPLY);
 
-    int term = read_raw<int>(ss);
-    int voteGranted = read_raw<int>(ss);
-
-    this->term = term;
-    this->voteGranted = (voteGranted != 0);
+    this->term = read_raw<int>(is);
+    this->voteGranted = read_raw<bool>(is);
 }
 
 
-// Initializes the message handler.  Call this before any calls to
-// onMessageReceived() or onTimeout().  Or if the connection has been reset.
-//
+unique_ptr<RawMessage> AddServerMessage::toRawMessage(const Address &from,
+                                                      const Address& to)
+{
+    stringstream    ss;
+
+    write_raw<int>(ss, static_cast<int>(this->msgtype));
+    write_raw<int>(ss, this->transId);
+
+    write_raw<Address>(ss, this->newServer);
+
+    return rawMessageFromStream(from, to, ss);
+}
+
+void AddServerMessage::load(istringstream& is)
+{
+    this->msgtype = static_cast<MessageType>(read_raw<int>(is));
+    this->transId = read_raw<int>(is);
+    assert(this->msgtype == MessageType::ADD_SERVER);
+
+    this->newServer = read_raw<Address>(is);
+}
+
+unique_ptr<RawMessage> AddServerReply::toRawMessage(const Address &from,
+                                                    const Address& to)
+{
+    stringstream    ss;
+
+    write_raw<int>(ss, static_cast<int>(this->msgtype));
+    write_raw<int>(ss, this->transId);
+
+    write_raw<bool>(ss, this->status);
+    write_raw<Address>(ss, this->leaderHint);
+
+    return rawMessageFromStream(from, to, ss);
+}
+
+void AddServerReply::load(istringstream& is)
+{
+    this->msgtype = static_cast<MessageType>(read_raw<int>(is));
+    this->transId = read_raw<int>(is);
+    assert(this->msgtype == MessageType::ADD_SERVER_REPLY);
+
+    this->status = read_raw<bool>(is);
+    this->leaderHint = read_raw<Address>(is);
+}
+
+unique_ptr<RawMessage> RemoveServerMessage::toRawMessage(const Address &from,
+                                                         const Address& to)
+{
+    stringstream    ss;
+
+    write_raw<int>(ss, static_cast<int>(this->msgtype));
+    write_raw<int>(ss, this->transId);
+
+    write_raw<Address>(ss, this->oldServer);
+
+    return rawMessageFromStream(from, to, ss);
+}
+
+void RemoveServerMessage::load(istringstream& is)
+{
+    this->msgtype = static_cast<MessageType>(read_raw<int>(is));
+    this->transId = read_raw<int>(is);
+    assert(this->msgtype == MessageType::REMOVE_SERVER);
+
+    this->oldServer = read_raw<Address>(is);
+}
+
+unique_ptr<RawMessage> RemoveServerReply::toRawMessage(const Address& from,
+                                                       const Address& to)
+{
+    stringstream    ss;
+
+    write_raw<int>(ss, static_cast<int>(this->msgtype));
+    write_raw<int>(ss, this->transId);
+
+    write_raw<bool>(ss, this->status);
+    write_raw<Address>(ss, this->leaderHint);
+
+    return rawMessageFromStream(from, to, ss);
+}
+
+void RemoveServerReply::load(istringstream& is)
+{
+    this->msgtype = static_cast<MessageType>(read_raw<int>(is));
+    this->transId = read_raw<int>(is);
+    assert(this->msgtype == MessageType::REMOVE_SERVER_REPLY);
+
+    this->status = read_raw<bool>(is);
+    this->leaderHint = read_raw<Address>(is);
+}
+
+
 void RaftMessageHandler::start(const Address &joinAddress)
 {
+    if (joinAddress.isZero())
+        throw AppException("zero join address is not allowed");
+
     auto node = netnode.lock();
     if (!node)
         throw AppException("");
@@ -94,13 +249,6 @@ void RaftMessageHandler::start(const Address &joinAddress)
     node->member.inited = true;
 
     node->member.memberList.clear();
-
-    // Nodes always start in uninitialized
-    // They need to be joined to the group first
-    // In our model, nodes add themselves by sending an
-    // ADD_SERVER message to the leader.
-    currentState = State::NONE;
-    joinTimeout = 0;
 
     joinGroup(joinAddress);
 }
@@ -118,7 +266,7 @@ void RaftMessageHandler::onMessageReceived(const RawMessage *raw)
 
     istringstream ss(std::string((const char *)raw->data.get(), raw->size));
 
-    MEMBER_MSGTYPE msgtype = static_cast<MessageType>(read_raw<int>(ss));
+    MessageType msgtype = static_cast<MessageType>(read_raw<int>(ss));
     ss.seekg(0, ss.beg);    // reset to start of the buffer
 
     switch(msgtype) {
@@ -142,28 +290,33 @@ void RaftMessageHandler::onMessageReceived(const RawMessage *raw)
 
 void RaftMessageHandler::onAppendEntries(const Address& from, istringstream& ss)
 {
-    DEBUG_LOG(log, raw->toAddress, "Append Entries received from %s",
-              raw->fromAddress.toString().c_str());
+    DEBUG_LOG(log, connection->address(), "Append Entries received from %s",
+              from.toString().c_str());
 
-    AppendEntriesMessage    message;
-    message.load(ss);
+    auto node = netnode.lock();
+    if (!node)
+        throw AppException("Network has been deleted");
+
+    shared_ptr<AppendEntriesMessage> message = make_shared<AppendEntriesMessage>();
+    message->load(ss);
 
     AppendEntriesReply  reply;
 
-    if (message.term < savedState.currentTerm) {
+    if (message->term < node->context.currentTerm) {
         reply.success = false;
-        reply.term = savedState.currentTerm;
+        reply.term = node->context.currentTerm;
     }
-    else if (!logContains(message.prevLogIndex, message.prevLogTerm)) {
+    else if (!node->context.raftLog.contains(message->prevLogIndex, message->prevLogTerm)) {
         reply.success = false;
         //$ TODO: Do I need to reply with the current term?
+        throw NYIException("Raft AppendEntries", __FILE__, __LINE__);
     }
 }
 
 void RaftMessageHandler::onRequestVote(const Address& from, istringstream& ss)
 {
-    DEBUG_LOG(log, raw->toAddress, "Request Vote received from %s",
-                raw->fromAddress.toString().c_str());
+    DEBUG_LOG(log, connection->address(), "Request Vote received from %s",
+                from.toString().c_str());
 
     RequestVoteMessage    message;
     message.load(ss);
@@ -171,36 +324,52 @@ void RaftMessageHandler::onRequestVote(const Address& from, istringstream& ss)
     RequestVoteReply    reply;
 }
 
-void RaftMessageHandler::OnAddServer(const Address& from, istringstream& ss)
+void RaftMessageHandler::onAddServer(const Address& from, istringstream& ss)
 {
+    auto node = netnode.lock();
+    if (!node)
+        throw AppException("Network has been deleted");
+
     AddServerMessage    request;
     AddServerReply      reply;
 
     request.load(ss);
-    if (currentState != State::LEADER) {
+    if (node->context.currentState != State::LEADER) {
         reply.status = false;
-        reply.leaderHint = savedState.leaderAddress;
+        reply.leaderHint = node->context.leaderAddress;
     }
+    else {
+        // We are the leader, so go ahead and add the member
+        node->context.addMember(request.newServer);
+        
+        // Send a reply
+        reply.status = true;
+    }
+
+    // Send the reply
+    auto raw = request.toRawMessage(connection->address(), from);
+    connection->send(raw.get());
 }
 
-void RaftMessageHandler::OnAddServerReply(const Address& from, istringstream& ss)
+void RaftMessageHandler::onAddServerReply(const Address& from, istringstream& ss)
 {
-    // This should only occur if we are trying to join
-    // a group and have not been initialized yet.
-    assert(currentState == State::NONE);
-
     auto node = netnode.lock();
     if (!node)
         throw AppException("Network has been deleted");
+
+    // This should only occur if we are trying to join
+    // a group and have not been initialized yet.
+    assert(node->context.currentState == State::NONE);
 
     AddServerReply  reply;
     reply.load(ss);
 
     if (reply.status) {
         // Success! we are part of the cluster
-        savedState.leaderAddress = from;
+        node->context.leaderAddress = from;
         node->member.inGroup = true;
-        stateChange(State::FOLLOWER);
+
+        node->context.init(this, store);
 
         // The membership list will get updated when we receive
         // APPEND_ENTRIES messages        
@@ -220,29 +389,44 @@ void RaftMessageHandler::OnAddServerReply(const Address& from, istringstream& ss
     }
 }
 
-void RaftMessageHandler::stateChange(State newState)
+// This has to implement the same functionality as the regular
+// AddServer() but with the added responsibility of sending
+// a reply to the CommandMessage.
+//
+// We do not forward the request, just return a failed notification,
+// with the leader address in the address portion.
+//
+void RaftMessageHandler::onAddServerCommand(shared_ptr<CommandMessage> command, const Address& address)
 {
-    if (this->currentState == newState)
-        return;
+    auto node = netnode.lock();
+    if (!node)
+        throw AppException("Network has been deleted");
 
-    switch(newState) {
-        case FOLLOWER:
-            nextHeartbeat = 0;      // disable heartbeat
-            break;
-        case CANDIDATE:
-            nextHeartbeat = 0;      // disable heartbeat
-            break;
-        case LEADER:
-            // Send heartbeat to all followers
-            //$ TODO: implement
+    shared_ptr<CommandMessage>  reply;
 
-            // steup for future heartbeats
-            nextHeartbeat = par->getCurrtime() + timeout;
-            break;
+    if (node->context.currentState != State::LEADER) {
+        reply = command->makeReply(false);
+
+        // Send back what we think is the leader
+        reply->address = node->context.leaderAddress;
+    }
+    else {
+        // Send a reply
+        reply = command->makeReply(true);
+
+        // If we are the leader
+        node->context.addMember(address);
     }
 
-    currentState = newState;
+    // Send the reply
+    auto raw = reply->toRawMessage(connection->address(), command->from);
+    connection->send(raw.get());
 }
+
+void RaftMessageHandler::onRemoveServerCommand(shared_ptr<CommandMessage> command, const Address& address)
+{
+}
+
 
 // This is called when there are no messages available (usually on a
 // connection timeout).  Thus perform any actions that should be done
@@ -255,7 +439,10 @@ void RaftMessageHandler::onTimeout()
     if (!node)
         throw AppException("Network has been deleted");
 
-    if (currentState == State::JOINING && joinTimeout > par->getCurrtime()) {
+    if (node->context.currentState == State::JOINING) {
+        // Check the transaction list for a add server request
+        // if this has failed, then quit
+
         // We have timed out on joining the cluster.
         // Nothing to do but to quit
         DEBUG_LOG(log, connection->address(), "Timeout on joining the cluster");
@@ -268,9 +455,9 @@ void RaftMessageHandler::onTimeout()
         return;
 
     // If leader, send heartbeats
-    if (currentState == State::LEADER && nextHeartbeat > par->getCurrtime()) {
+    if (node->context.currentState == State::LEADER && nextHeartbeat > par->getCurrtime()) {
         //$ TODO: send heartbeat to all followers
-        nextHeartbeat = par->getCurrtime() + timeout;
+        nextHeartbeat = par->getCurrtime() + par->heartbeatTimeout;
     }
 }
 
@@ -284,22 +471,26 @@ void RaftMessageHandler::joinGroup(const Address & joinAddress)
     if (!node)
         throw AppException("Network has been deleted");
 
-    if (connection->address() == joinAddress) {
-        // we are the first process to join the group
-        // Make ourselves the leader, initialize the log
-
+    if (joinAddress == connection->address() || joinAddress.isZero()) {
+        // This should only be called when we are the first process to
+        // startup.
+        // If joinAddress is all zeros, then we are either the first
+        // node or we have to wait until we are contacted by a leader.
+        // In either case, the startup process is the same.
+        //
         DEBUG_LOG(log, connection->address(), "Starting up group...");
-        node->member.inGroup = true;
-        node->member.addToMemberList(connection->address(),
-                                     par->getCurrtime(),
-                                     node->member.heartbeat);
+        node->context.init(this, store);
 
-        //$ TODO: initialie the system
-        //$ TODO: intiialize the log entries for the system
+        // add ourselves as a member to the group
+        node->context.addMember(connection->address());
 
-        currentState = State::LEADER;
+        // Setup the timeout callbacks
+        this->electionTimeout = par->getCurrtime() + par->electionTimeout;
+        this->heartbeatTimeout = par->getCurrtime() + par->heartbeatTimeout;
     }
     else {
+        assert(!joinAddress.isZero());
+
         AddServerMessage    request;
 
         request.newServer = connection->address();
@@ -307,9 +498,40 @@ void RaftMessageHandler::joinGroup(const Address & joinAddress)
 
         DEBUG_LOG(log, connection->address(), "Trying to join...");
 
-        stateChange(State::JOINING);
-        joinTimeout = par->getCurrtime() + JOIN_TIMEOUT;
+        //context.change(State::JOINING);
 
+        // Create a transaction, however, the timeout on this transaction
+        // will cause the server to shutdown.
+
+        //joinTimeout = par->getCurrtime() + JOIN_TIMEOUT;
         connection->send(raw.get());
     }
 }
+
+// The actual Raft state machine (for our application) is
+// actually the membership list.  This is kept separate from
+// the leader-kept follower list.
+//
+void RaftMessageHandler::applyLogEntry(const RaftLogEntry& entry)
+{
+    auto node = netnode.lock();
+    if (!node)
+        throw AppException("");
+
+    switch(entry.command) {
+        case CMD_ADD_SERVER:
+            node->member.addToMemberList(
+                entry.address,
+                par->getCurrtime(),
+                0);
+            break;
+        case CMD_REMOVE_SERVER:
+            node->member.removeFromMemberList(
+                entry.address);
+            break;
+        default:
+            throw NetworkException("Unknown log entry command!");
+            break;
+    }
+}
+

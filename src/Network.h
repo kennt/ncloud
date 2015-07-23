@@ -132,6 +132,13 @@ public:
         this->port = port;
     }
 
+    // Returns true if all fields are 0.  This is typically used to
+    // check if the address has been set (all fields are initialized to 0).
+    bool isZero() const
+    {
+        return ipaddr == 0 && port == 0;
+    }
+
     // property accessors
     unsigned int getIPv4Address() const
     {
@@ -242,6 +249,18 @@ inline ostream& operator<<(ostream& os, const Address& address)
     os << address.toString();
     return os;
 }
+
+namespace std {
+    template<>
+    struct hash<Address> {
+    public:
+        size_t operator()(const Address &x) const
+        {
+            return hash<unsigned int>()(x.ipaddr) ^ hash<unsigned short>()(x.port);
+        }
+    };
+}
+
 
 // RawMessage is used for both sending/receiving.  This is
 // what gets passed to and from the interfaces.

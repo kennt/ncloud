@@ -53,6 +53,23 @@ protected:
     std::string desc;
 };
 
+class NYIException : public std::exception
+{
+public:
+    NYIException(const char *description, const char *filename, int loc)
+    {
+        //$ TODO: this may throw due to a failure in memory allocation
+        // maybe use a static buffer for this?
+        desc = string_format("nyi: %s(%d) : %s", filename, loc, description);
+    }
+
+    virtual const char *what() const throw()
+    {
+        return desc.c_str();
+    }
+protected:
+    std::string desc;
+};
 
 struct RawMessage;
 class Address;
