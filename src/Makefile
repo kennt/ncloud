@@ -64,19 +64,19 @@ rafts: 	Log.o \
 		Command.o
 	g++ -o Application RaftApp.o Log.o Util.o SocketNetwork.o Params.o NetworkNode.o Raft.o MP2.o jsoncpp.o Context.o Member.o Ring.o Command.o ${CFLAGS}
 
-raft: 	Log.o \
-		Util.o \
-		SimNetwork.o \
-		Params.o \
-		NetworkNode.o \
-		RaftApp.o \
-		Raft.o \
-		MP2.o \
-		jsoncpp.o \
+raft: 	RaftApp.o \
+		Command.o \
 		Context.o \
+		Log.o \
 		Member.o \
+		MP2.o \
+		NetworkNode.o \
+		Params.o \
+		Raft.o \
 		Ring.o \
-		Command.o
+		SimNetwork.o \
+		Util.o \
+		jsoncpp.o
 	g++ -o Application RaftApp.o Log.o Util.o SimNetwork.o Params.o NetworkNode.o Raft.o MP2.o jsoncpp.o Context.o Member.o Ring.o Command.o ${CFLAGS}
 
 test: TestMain.o \
@@ -138,6 +138,7 @@ TestNetwork.o: TestNetwork.cpp \
 	g++ -c TestNetwork.cpp ${CFLAGS}
 
 TestRaft.o: TestRaft.cpp \
+		Context.h \
 		Network.h \
 		Raft.h \
 		MockNetwork.h \
@@ -151,11 +152,13 @@ MockNetwork.o: MockNetwork.cpp \
 
 NetworkNode.o: NetworkNode.cpp \
 		NetworkNode.h \
-		stdincludes.h \
+		Context.h \
 		Log.h \
-		Params.h \
 		Member.h \
-		Util.h
+		Params.h \
+		Raft.h \
+		Util.h \
+		stdincludes.h
 	g++ -c NetworkNode.cpp ${CFLAGS}
 
 MP1App.o: MP1App.cpp \
@@ -186,30 +189,32 @@ MP2App.o: MP2App.cpp \
 
 RaftApp.o: RaftApp.cpp \
 		RaftApp.h \
-		stdincludes.h \
-		Network.h \
-		SimNetwork.h \
+		Context.h \
 		Log.h \
-		Params.h \
-		NetworkNode.h \
 		Member.h \
-		Ring.h \
+		MP2.h \
+		Network.h \
+		NetworkNode.h \
+		Params.h \
 		Raft.h \
-		MP2.h
+		Ring.h \
+		SimNetwork.h \
+		stdincludes.h
 	g++ -c RaftApp.cpp ${CFLAGS}
 
 SocketApp.o: SocketApp.cpp \
 		SocketApp.h \
-		stdincludes.h \
-		Network.h \
-		SocketNetwork.h \
+		Context.h \
 		Log.h \
-		Params.h \
+		Network.h \
 		NetworkNode.h \
 		Member.h \
-		Ring.h \
 		MP1.h \
-		MP2.h
+		MP2.h \
+		Params.h \
+		Ring.h \
+		SocketNetwork.h \
+		stdincludes.h
 	g++ -c SocketApp.cpp ${CFLAGS}
 
 MP1.o:  MP1.cpp \
@@ -222,20 +227,26 @@ MP1.o:  MP1.cpp \
 
 MP2.o:	MP2.cpp \
 		MP2.h \
-		MP1.h \
-		stdincludes.h \
+		Context.h \
 		Log.h \
+		Member.h \
+		MP1.h \
+		Network.h \
+		NetworkNode.h \
 		Params.h \
-		NetworkNode.h
+		Ring.h \
+		stdincludes.h
 	g++ -c MP2.cpp ${CFLAGS}
 
 Raft.o:	Raft.cpp \
 		Raft.h \
-		MP2.h \
-		stdincludes.h \
+		Context.h \
 		Log.h \
+		MP2.h \
+		Network.h \
+		NetworkNode.h \
 		Params.h \
-		NetworkNode.h
+		stdincludes.h
 	g++ -c Raft.cpp ${CFLAGS}
 
 jsoncpp.o: jsoncpp.cpp
@@ -243,11 +254,13 @@ jsoncpp.o: jsoncpp.cpp
 
 Member.o: Member.cpp \
 		Member.h \
+		Context.h \
 		Network.h \
 		NetworkNode.h
 	g++ -c Member.cpp ${CFLAGS}
 
 Context.o: Context.cpp \
+		Context.h \
 		Network.h \
 		NetworkNode.h \
 		Util.h
@@ -255,18 +268,21 @@ Context.o: Context.cpp \
 
 Ring.o: Ring.cpp \
 		Ring.h \
+		Context.h \
+		Member.h \
 		Network.h \
 		NetworkNode.h
 	g++ -c Ring.cpp ${CFLAGS}
 
 Command.o: Command.cpp \
 		Command.h \
-		stdincludes.h \
+		Context.h \
 		Log.h \
-		Params.h \
-		NetworkNode.h \
 		Member.h \
-		Ring.h
+		NetworkNode.h \
+		Params.h \
+		Ring.h \
+		stdincludes.h
 	g++ -c Command.cpp ${CFLAGS}
 
 clean:

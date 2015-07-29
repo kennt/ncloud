@@ -88,30 +88,12 @@ struct RaftLogEntry {
     // This is the address being operated on (either added or deleted).
     Address     address;
 
-    RaftLogEntry() : termReceived(0)
+    RaftLogEntry() : termReceived(0), command(Command::CMD_NONE)
     {}
 
     // Used for load/save for messages
     void write(stringstream& ss);
     void read(istringstream& is);
-};
-
-
-// Implements the behavior needed for a Raft-based log.
-// Note that the indexes are all 1-based!
-class RaftLog
-{
-public:
-    RaftLog() {};
-
-    // returns true if the entry at position pos matches term
-    bool    contains(int pos, int term) const;
-    void    clear() {
-        entries.clear();
-    }
-    
-    vector<RaftLogEntry>  entries;
-
 };
 
 
@@ -206,7 +188,10 @@ class RaftMessageHandler;
 
 struct Context
 {
-    Context() : handler(nullptr) {}
+    Context() : handler(nullptr), store(nullptr), 
+        electionTimeout(0), heartbeatTimeout(0), currentState(State::NONE),
+        commitIndex(0), lastAppliedIndex(0), currentTerm(0)
+    {}
 
     void init(RaftMessageHandler *handler,
               ContextStoreInterface *store);
@@ -227,6 +212,12 @@ struct Context
     // lifetime of the context object (thus just a pointer to
     // the store interface is held).
     ContextStoreInterface * store;
+
+    // Timeouts (real time) for the timeout.  These are kept here
+    // since the context state will be used/modified by these
+    // timeouts.
+    int         electionTimeout;
+    int         heartbeatTimeout;
 
 
     // ==================
@@ -260,7 +251,11 @@ struct Context
     // Membership changes are communicated as log changes.  See Sect 3.4.
     // log entries, each log entry contains command for the state machine,
     // and term when entry was received by the leader (first index is 1).
-    RaftLog     raftLog;
+    //
+    // Note that the log starts out with a dummy entry at position 0.
+    // This is due to Raft starting its log index at 1 (this is to avoid
+    // confusion).    
+    vector<RaftLogEntry>    logEntries;
 
     // Serialization APIs
     void saveToStore();
@@ -289,6 +284,9 @@ struct Context
     // APIs for context manipulation
     void addMember(const Address& address);
     void removeMember(const Address& address);
+
+    // Perform any actions/checking of the timeout
+    void onTimeout();
 };
 
 }

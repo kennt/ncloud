@@ -40,11 +40,7 @@ enum MessageType {
     APPEND_ENTRIES,
     APPEND_ENTRIES_REPLY,
     REQUEST_VOTE,
-    REQUEST_VOTE_REPLY,
-    ADD_SERVER,
-    ADD_SERVER_REPLY,
-    REMOVE_SERVER,
-    REMOVE_SERVER_REPLY
+    REQUEST_VOTE_REPLY
 };
 
 // ==================
@@ -72,6 +68,8 @@ public:
     // into the RawMessage data.  Ownership of the RawMessage is passed
     // to the caller.
     virtual unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to) = 0; 
+
+    static MessageType getMessageType(const byte *data, size_t size);
 };
 
 class AppendEntriesMessage : public Message
@@ -166,72 +164,6 @@ public:
     virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
-class AddServerMessage : public Message
-{
-public:
-    // Implied MessageType::ADD_SERVER
-
-    // Address of server to add to configuration
-    Address     newServer;
-
-    AddServerMessage() : Message(ADD_SERVER) {}
-
-    virtual void load(istringstream& ss) override;
-    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
-};
-
-class AddServerReply : public Message
-{
-public:
-    // Implied MessageType::ADD_SERVER_REPLY
-
-    // true if server was added succesfully
-    bool        status;
-
-    // Address of recent leader, if known
-    Address     leaderHint;
-
-    AddServerReply() : Message(ADD_SERVER_REPLY), status(false) 
-    {}
-
-    virtual void load(istringstream& ss) override;
-    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
-};
-
-
-class RemoveServerMessage : public Message
-{
-public:
-    // Implied MessageType::REMOVE_SERVER
-
-    // Address of server to remove from configutation
-    Address     oldServer;
-
-    RemoveServerMessage() : Message(REMOVE_SERVER) {}
-
-    virtual void load(istringstream& ss) override;
-    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
-};
-
-
-class RemoveServerReply : public Message
-{
-public:
-    // Implied MessageType::REMOVE_SERVER_REPLY
-
-    // true if server was removed successfully
-    bool        status;
-
-    // Address of recent leader, if known
-    Address     leaderHint;
-
-    RemoveServerReply() : Message(REMOVE_SERVER_REPLY), status(false) 
-    {}
-
-    virtual void load(istringstream& ss) override;
-    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
-};
-
 
 // The RaftMessageHandler uses message IDs as a way to distringuish RPC replies.
 // Due to the network, replies may be received out-of-order.  Thus we use
@@ -245,6 +177,7 @@ struct Transaction
 {
     int         transId;
 
+    // So this transaction expires on timeSent + timeout
     int         timeSent;
     int         timeout;
 
@@ -252,11 +185,12 @@ struct Transaction
     Address     toAddress;
     shared_ptr<Message> message;
 
-    // Optional function to call on timeout
-    std::function<void (Transaction *trans)> onTimeout;
-
-    // Optional function to call when a reply is received
-    std::function<void (Transaction *trans, shared_ptr<Message> reply)> onReply;
+    Transaction() : transId(0), timeSent(0), timeout(0) {}
+    Transaction(int transid, int timesent, int timeout, const Address&to,
+            shared_ptr<Message> message)
+        : transId(transid), timeSent(timesent), timeout(timeout),
+        toAddress(to), message(message)
+    {}
 };
 
 
@@ -277,8 +211,8 @@ public:
                       ContextStoreInterface *store,
                       shared_ptr<NetworkNode> netnode,
                       shared_ptr<IConnection> connection)
-        : log(log), par(par), store(store), netnode(netnode), connection(connection),
-        electionTimeout(0), heartbeatTimeout(0), nextHeartbeat(0)
+        : log(log), par(par), store(store), netnode(netnode),
+            connection(connection), nextHeartbeat(0), nextMessageId(0)
     {
     };
 
@@ -287,11 +221,8 @@ public:
     // Initializes the MessageHandler, if needed. This will be called
     // before onMessageReceived() or onTimeout() will be called.
     //
-    // Call this with a zero'ed address (0.0.0.0:0) for the first
-    // node in the cluster to startup.  Otherwise call with an address
-    // of any node within the cluster.
-    // (otherwise we don't know how to find the cluster).
-    virtual void start(const Address &address) override;    
+    // For Raft, the address parameter is not used.
+    virtual void start(const Address &unused) override;    
 
     // This is called when a message has been received.  This may be
     // called more than once for a timeslice.
@@ -300,14 +231,14 @@ public:
     // Called when no messages are available (and the connection has timed out).
     virtual void onTimeout() override;
 
-    // Performs the action to join a group (sending a JoinRequest message).
-    void joinGroup(const Address& address);
-
     // Handlers for the individual messages
     void onAppendEntries(const Address& from, istringstream& ss);
     void onRequestVote(const Address& from, istringstream& ss);
-    void onAddServer(const Address& from, istringstream& ss);
-    void onAddServerReply(const Address& from, istringstream& ss);
+
+    // Replies are all handled here.  This is a dispatcher which
+    // calls the separate onXXXReply() callbakcs and also cleans
+    // up the transactions.
+    void onReply(const Address& from, MessageType mt, istringstream& ss);
 
     // Handlers for command messages
     // i.e. those messages received via JSON command messages
@@ -322,6 +253,9 @@ public:
     void closeTransaction(int transId);
 
     // State manipulation APIs
+    // This will not add the entry to the log, it applies the
+    // change to the "state machine"
+    void applyLogEntry(Command command, const Address& address);
     void applyLogEntry(const RaftLogEntry& entry);
 
 protected:
@@ -330,8 +264,6 @@ protected:
     ContextStoreInterface * store;
     weak_ptr<NetworkNode>   netnode;
     shared_ptr<IConnection> connection;
-    int                     electionTimeout;
-    int                     heartbeatTimeout;
 
     // This can be built from the log by executing all
     // of the log entries.
@@ -343,7 +275,17 @@ protected:
 
     // List of currently open transactions
     //$ TODO: maybe keep sorted based on timeout?
-    map<int, Transaction>   transaction;
+    map<int, Transaction>   transactions;
+
+    // Unique id used to track messages/transactions
+    int                     nextMessageId;
+
+
+    // Specific reply-handlers
+    void onAppendEntriesReply(const Address& from, istringstream& ss);
+    void onRequestVoteReply(const Address& from, istringstream& ss);
+    void onAddServerReply(const Address& from, istringstream& ss);
+    void onRemoveServerReply(const Address& from, istringstream& ss);
 };
 
 }

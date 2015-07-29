@@ -56,14 +56,15 @@ protected:
 
 
 // Provide for debug output.  This helps to avoid having ifdef guards around
-// debug output.
+// debug output.  This macro assumes a variable (in-scope) that is called
+// log.
 #ifdef DEBUG
 
-    #define DEBUG_LOG(log, address, msg, ...) do { if (log) { log->log(address, msg, ##__VA_ARGS__); }} while(false)
+    #define DEBUG_LOG(address, msg, ...) do { if (log) { log->log(address, msg, ##__VA_ARGS__); }} while(false)
 
 #else
 
-    #define DEBUG_LOG(log, name, msg, ...)
+    #define DEBUG_LOG(address, msg, ...)
 
 #endif
 

@@ -899,7 +899,7 @@ void Application::fail()
         removed = rand() % par->numberOfNodes;
 
         conn = nodes[removed]->getConnection(ConnectType::MEMBER);
-        DEBUG_LOG(log, conn->address(), "Node failed at time=%d", par->getCurrtime());
+        DEBUG_LOG(conn->address(), "Node failed at time=%d", par->getCurrtime());
 
         nodes[removed]->fail();
     }
@@ -909,7 +909,7 @@ void Application::fail()
         for (int i = removed; i < removed + par->numberOfNodes/2; i++) {
 
             conn = nodes[i]->getConnection(ConnectType::MEMBER);
-            DEBUG_LOG(log, conn->address(), "Node failed at time=%d", par->getCurrtime());
+            DEBUG_LOG(conn->address(), "Node failed at time=%d", par->getCurrtime());
 
             nodes[i]->fail();
         }

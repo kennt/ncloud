@@ -88,7 +88,7 @@ void MP1MessageHandler::onMessageReceived(const RawMessage *raw)
 
     switch(msgtype) {
         case MEMBER_MSGTYPE::JOINREQ: {
-                DEBUG_LOG(log, raw->toAddress, "JOINREQ received from %s", 
+                DEBUG_LOG(raw->toAddress, "JOINREQ received from %s", 
                     raw->fromAddress.toString().c_str());   
 
                 JoinRequestMessage joinReq;
@@ -148,7 +148,7 @@ void MP1MessageHandler::joinGroup(const Address & joinAddress)
         // we are the first process to join the group
         // boot up the group
 
-        DEBUG_LOG(log, connection->address(), "Starting up group...");
+        DEBUG_LOG(connection->address(), "Starting up group...");
         node->member.inGroup = true;
         node->member.addToMemberList(connection->address(),
                                      par->getCurrtime(),
@@ -163,7 +163,7 @@ void MP1MessageHandler::joinGroup(const Address & joinAddress)
 
         auto raw = joinReq.toRawMessage(connection->address(), joinAddress);
 
-        DEBUG_LOG(log, connection->address(), "Trying to join...");
+        DEBUG_LOG(connection->address(), "Trying to join...");
 
         connection->send(raw.get());
     }

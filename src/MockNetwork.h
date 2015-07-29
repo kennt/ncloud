@@ -54,15 +54,15 @@ public:
 
     void reset();
 
+    size_t          messagesSent;
+    size_t          messagesReceived;
+
 protected:
     Params *        par;
     weak_ptr<MockNetwork>    simnet;
     Address         myAddress;
 
     IConnection::Status status;
-
-    size_t          messagesSent;
-    size_t          messagesReceived;
 };
 
 
@@ -142,6 +142,9 @@ public:
     // However, it does not remove the connections. It will
     // call reset() on each connection though.
     vector<shared_ptr<MockMessage>>     messages;
+
+    // Test API used to add ("send") a message to the network
+    void addMessage(const Address& from, const Address& to, RawMessage *raw);
 
 protected:
     Params *    par;
