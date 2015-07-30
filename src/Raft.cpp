@@ -12,10 +12,37 @@
 
 using namespace Raft;
 
+void Raft::Message::write(stringstream& ss)
+{
+    write_raw<int>(ss, static_cast<int>(this->msgtype));
+    write_raw<int>(ss, this->transId);
+    write_raw<int>(ss, this->term);    
+}
+
+void Raft::Message::read(istringstream& is)
+{
+    this->msgtype = static_cast<MessageType>(read_raw<int>(is));
+    this->transId = read_raw<int>(is);
+    this->term = read_raw<int>(is);
+}
+
 MessageType Raft::Message::getMessageType(const byte *data, size_t dataSize)
 {
     istringstream ss(std::string((const char *)data, dataSize));
     return static_cast<MessageType>(read_raw<int>(ss));
+}
+
+unique_ptr<RawMessage> HeaderOnlyMessage::toRawMessage(const Address& from,
+                                                       const Address& to)
+{
+    // Header-only messages should not be used to create a 
+    // real message.
+    throw AppException("Should not reach here");
+}
+
+void HeaderOnlyMessage::load(istringstream& is)
+{
+    this->read(is);
 }
 
 unique_ptr<RawMessage> AppendEntriesMessage::toRawMessage(const Address &from,
@@ -23,10 +50,8 @@ unique_ptr<RawMessage> AppendEntriesMessage::toRawMessage(const Address &from,
 {
     stringstream    ss;
 
-    write_raw<int>(ss, static_cast<int>(this->msgtype));
-    write_raw<int>(ss, this->transId);
+    this->write(ss);
 
-    write_raw<int>(ss, this->term);
     write_raw<Address>(ss, this->leaderAddress);
     write_raw<int>(ss, this->prevLogIndex);
     write_raw<int>(ss, this->prevLogTerm);
@@ -41,11 +66,9 @@ unique_ptr<RawMessage> AppendEntriesMessage::toRawMessage(const Address &from,
 
 void AppendEntriesMessage::load(istringstream& is)
 {
-    this->msgtype = static_cast<MessageType>(read_raw<int>(is));
-    this->transId = read_raw<int>(is);
+    this->read(is);
     assert(this->msgtype == MessageType::APPEND_ENTRIES);
 
-    this->term = read_raw<int>(is);
     this->leaderAddress = read_raw<Address>(is);
     this->prevLogIndex = read_raw<int>(is);
     this->prevLogTerm = read_raw<int>(is);
@@ -65,10 +88,8 @@ unique_ptr<RawMessage> AppendEntriesReply::toRawMessage(const Address &from,
 {
     stringstream    ss;
 
-    write_raw<int>(ss, static_cast<int>(this->msgtype));
-    write_raw<int>(ss, this->transId);
+    this->write(ss);
 
-    write_raw<int>(ss, this->term);
     write_raw<bool>(ss, this->success);
 
     return rawMessageFromStream(from, to, ss);
@@ -76,11 +97,9 @@ unique_ptr<RawMessage> AppendEntriesReply::toRawMessage(const Address &from,
 
 void AppendEntriesReply::load(istringstream& is)
 {
-    this->msgtype = static_cast<MessageType>(read_raw<int>(is));
-    this->transId = read_raw<int>(is);
+    this->read(is);
     assert(this->msgtype == MessageType::APPEND_ENTRIES_REPLY);
 
-    this->term = read_raw<int>(is);
     this->success = read_raw<bool>(is);
 }
 
@@ -89,11 +108,9 @@ unique_ptr<RawMessage> RequestVoteMessage::toRawMessage(const Address &from,
 {
     stringstream    ss;
 
-    write_raw<int>(ss, static_cast<int>(this->msgtype));
-    write_raw<int>(ss, this->transId);
+    this->write(ss);
 
-    write_raw<int>(ss, this->term);
-    write_raw<Address>(ss, this->candidateAddress);
+    write_raw<Address>(ss, this->candidate);
     write_raw<int>(ss, this->lastLogIndex);
     write_raw<int>(ss, this->lastLogTerm);
 
@@ -102,12 +119,10 @@ unique_ptr<RawMessage> RequestVoteMessage::toRawMessage(const Address &from,
 
 void RequestVoteMessage::load(istringstream& is)
 {
-    this->msgtype = static_cast<MessageType>(read_raw<int>(is));
-    this->transId = read_raw<int>(is);
+    this->read(is);
     assert(this->msgtype == MessageType::REQUEST_VOTE);
 
-    this->term = read_raw<int>(is);
-    this->candidateAddress = read_raw<Address>(is);
+    this->candidate = read_raw<Address>(is);
     this->lastLogIndex = read_raw<int>(is);
     this->lastLogTerm = read_raw<int>(is);
 }
@@ -122,10 +137,8 @@ unique_ptr<RawMessage> RequestVoteReply::toRawMessage(const Address &from,
 {
     stringstream    ss;
 
-    write_raw<int>(ss, static_cast<int>(this->msgtype));
-    write_raw<int>(ss, this->transId);
+    this->write(ss);
 
-    write_raw<int>(ss, this->term);
     write_raw<bool>(ss, this->voteGranted);
 
     return rawMessageFromStream(from, to, ss);
@@ -137,11 +150,9 @@ unique_ptr<RawMessage> RequestVoteReply::toRawMessage(const Address &from,
 //
 void RequestVoteReply::load(istringstream& is)
 {
-    this->msgtype = static_cast<MessageType>(read_raw<int>(is));
-    this->transId = read_raw<int>(is);
+    this->read(is);
     assert(this->msgtype == MessageType::REQUEST_VOTE_REPLY);
 
-    this->term = read_raw<int>(is);
     this->voteGranted = read_raw<bool>(is);
 }
 
@@ -157,13 +168,11 @@ void RaftMessageHandler::start(const Address &unused)
 
     node->member.memberList.clear();
 
-    DEBUG_LOG(connection->address(), "starting up...");
+    DEBUG_LOG(connection_->address(), "starting up...");
     node->context.init(this, store);
 
-    // start the timeouts up
-    // If the timeouts are triggered then events happen
-    node->context.electionTimeout = par->getCurrtime() + par->electionTimeout;
-    node->context.heartbeatTimeout = par->getCurrtime() + par->heartbeatTimeout;
+    // start the election timeout
+    node->context.resetTimeout();
 }
 
 // This is a callback and is called when the connection has received
@@ -179,17 +188,33 @@ void RaftMessageHandler::onMessageReceived(const RawMessage *raw)
 
     istringstream ss(std::string((const char *)raw->data.get(), raw->size));
 
-    MessageType msgtype = static_cast<MessageType>(read_raw<int>(ss));
+    HeaderOnlyMessage   header;
+    header.load(ss);
     ss.seekg(0, ss.beg);    // reset to start of the buffer
 
     // If we do not belong to a group, then do not handle any
     // client requests.
     if (!node->member.inGroup) {
-        DEBUG_LOG(connection->address(), "message dropped, not in group yet");
+        DEBUG_LOG(connection_->address(),
+            "message dropped, not in group yet");
         return;
     }
 
-    switch(msgtype) {
+    if (header.term > node->context.currentTerm) {
+        //$ CHECK: Does this state change happen before
+        // or after RPC handling?  Does this cause the
+        // message handling to continue? or do we drop the msg?
+        DEBUG_LOG(connection_->address(),
+            "new term(%d->%d)! converting to follower",
+            node->context.currentTerm, header.term);
+        node->context.currentTerm = header.term;
+        node->context.currentState = State::FOLLOWER;
+
+        // new term, clear the lastVotedFor
+        node->context.votedFor.clear();
+    }
+
+    switch(header.msgtype) {
         case MessageType::APPEND_ENTRIES:
             onAppendEntries(raw->fromAddress, ss);
             break;
@@ -198,17 +223,17 @@ void RaftMessageHandler::onMessageReceived(const RawMessage *raw)
             break;
         case MessageType::APPEND_ENTRIES_REPLY:
         case MessageType::REQUEST_VOTE_REPLY:
-            onReply(raw->fromAddress, msgtype, ss);
+            onReply(raw->fromAddress, header.msgtype, ss);
             break;
         default:
-            throw NetworkException(string_format("Unknown message type: %d", msgtype).c_str());
+            throw NetworkException(string_format("Unknown message type: %d", header.msgtype).c_str());
             break;
     }
 }
 
 void RaftMessageHandler::onAppendEntries(const Address& from, istringstream& ss)
 {
-    DEBUG_LOG(connection->address(), "Append Entries received from %s",
+    DEBUG_LOG(connection_->address(), "Append Entries received from %s",
               from.toString().c_str());
 
     auto node = netnode.lock();
@@ -229,33 +254,48 @@ void RaftMessageHandler::onAppendEntries(const Address& from, istringstream& ss)
         //$ TODO: Do I need to reply with the current term?
         throw NYIException("Raft AppendEntries", __FILE__, __LINE__);
     }
+
+    // if from current leader, reset timeout
+    if (from == node->context.leaderAddress)
+        node->context.resetTimeout();
 }
 
 void RaftMessageHandler::onRequestVote(const Address& from, istringstream& ss)
 {
-    DEBUG_LOG(connection->address(), "Request Vote received from %s",
+    auto node = netnode.lock();
+    if (!node)
+        throw AppException("Network has been deleted");
+
+    DEBUG_LOG(connection_->address(), "Request Vote received from %s",
                 from.toString().c_str());
 
-    RequestVoteMessage    message;
-    message.load(ss);
+    RequestVoteMessage    request;
+    request.load(ss);
 
     RequestVoteReply    reply;
+    reply.transId = request.transId;
+    reply.term = node->context.currentTerm;
+    reply.voteGranted = false;
+
+    //$ TODO: refactor?  just following the psuedo-code
+    if (request.term < node->context.currentTerm) {
+        reply.voteGranted = false;
+    }
+    else if ((node->context.votedFor.isZero() ||
+              node->context.votedFor == request.candidate) &&
+             isLogCurrent(request.lastLogIndex, request.lastLogTerm)) {
+        reply.voteGranted = true;
+    }
+
+    auto raw = reply.toRawMessage(connection()->address(), from);
+    connection()->send(raw.get());
+
+    // If we have voted, reset the timeout
+    node->context.resetTimeout();
 }
 
 void RaftMessageHandler::onReply(const Address&from, MessageType mt, istringstream& ss)
 {
-    // Read in the message type and transid again
-    // skip past the msgtype
-    read_raw<int>(ss);
-    int     transid = read_raw<int>(ss);
-    ss.seekg(0, ss.beg);    // reset to start of the buffer
-
-    if (transactions.count(transid) == 0) {
-        // Cannot find the transaction, nothing to
-        // do except to exit (it may have timeout)
-        return;
-    }
-
     switch (mt) {
         case APPEND_ENTRIES_REPLY:
             onAppendEntriesReply(from, ss);
@@ -267,8 +307,6 @@ void RaftMessageHandler::onReply(const Address&from, MessageType mt, istringstre
             throw NYIException("reply handler", __FILE__, __LINE__);
             break;
     }
-
-    closeTransaction(transid);
 }
 
 void RaftMessageHandler::onAppendEntriesReply(const Address& from, istringstream& ss)
@@ -304,20 +342,37 @@ void RaftMessageHandler::onAddServerCommand(shared_ptr<CommandMessage> command, 
         reply->address = node->context.leaderAddress;
     }
     else {
-        // Send a reply
         reply = command->makeReply(true);
-
-        // If we are the leader
         node->context.addMember(address);
     }
 
     // Send the reply
-    auto raw = reply->toRawMessage(connection->address(), command->from);
-    connection->send(raw.get());
+    auto raw = reply->toRawMessage(connection_->address(), command->from);
+    connection_->send(raw.get());
 }
 
 void RaftMessageHandler::onRemoveServerCommand(shared_ptr<CommandMessage> command, const Address& address)
 {
+    auto node = netnode.lock();
+    if (!node)
+        throw AppException("Network has been deleted");
+
+    shared_ptr<CommandMessage>  reply;
+
+    if (node->context.currentState != State::LEADER) {
+        reply = command->makeReply(false);
+
+        // Send back what we think is the leader
+        reply->address = node->context.leaderAddress;
+    }
+    else {
+        reply = command->makeReply(true);
+        node->context.removeMember(address);
+    }
+
+    // Send the reply
+    auto raw = reply->toRawMessage(connection_->address(), command->from);
+    connection_->send(raw.get());
 }
 
 
@@ -332,28 +387,51 @@ void RaftMessageHandler::onTimeout()
     if (!node)
         throw AppException("Network has been deleted");
 
-    if (node->context.currentState == State::JOINING) {
-        // Check the transaction list for a add server request
-        // if this has failed, then quit
-
-        // We have timed out on joining the cluster.
-        // Nothing to do but to quit
-        //$ TODO: would it be better to throw an exception?
-        DEBUG_LOG(connection->address(), "Timeout on joining the cluster");
-        node->quit();
-        return;
-    }
-
     // Wait until you're in the group
-    if (!node->member.inGroup)
-        return;
+    //if (!node->member.inGroup)
+    //    return;
 
     node->context.onTimeout();
 
     // If leader, send heartbeats
-    if (node->context.currentState == State::LEADER && nextHeartbeat > par->getCurrtime()) {
-        //$ TODO: send heartbeat to all followers
-        nextHeartbeat = par->getCurrtime() + par->heartbeatTimeout;
+    if (node->context.currentState == State::LEADER) {
+        if (nextHeartbeat > par->getCurrtime()) {
+            //$ TODO: send heartbeat to all followers
+            node->context.resetTimeout();
+        }
+    }
+    else if (node->context.currentState == State::FOLLOWER) {
+        // If it times out and we haven't voted for anyone this
+        // term, then convert to candidate
+        if (node->context.electionTimeout >= par->getCurrtime() &&
+            node->context.votedFor.isZero()) {
+            // Election timeout!
+            node->context.currentState = State::CANDIDATE;
+            node->context.startElection(node->member);
+        }
+    }
+    else if (node->context.currentState == State::CANDIDATE) {
+        // Check our vote totals
+        if ((2 * node->context.votesReceived) > node->context.votesTotal) {
+            // majority vote, we have become the leader
+            node->context.leaderAddress = connection()->address();
+            node->context.currentState = State::LEADER;
+
+            // broadcast heartbeats
+            AppendEntriesMessage    message;
+            message.transId = getNextMessageId();
+            message.term = node->context.currentTerm;
+            message.leaderAddress = connection()->address();
+            message.prevLogIndex = node->context.logEntries.size()-1;
+            message.prevLogTerm = node->context.logEntries[message.prevLogIndex].termReceived;
+            message.leaderCommit = node->context.commitIndex;
+            
+            broadcast(&message);
+        }
+        else if (node->context.electionTimeout >= par->getCurrtime()) {
+            // election timeout, start new election
+            node->context.startElection(node->member);
+        }
     }
 }
 
@@ -411,3 +489,30 @@ void RaftMessageHandler::applyLogEntry(Command command,
     }
 }
 
+bool RaftMessageHandler::isLogCurrent(int index, int term)
+{
+    auto node = netnode.lock();
+    if (!node)
+        throw AppException("");
+
+    if (index != (node->context.logEntries.size()-1))
+        return false;
+    return term == node->context.logEntries[index].termReceived;
+}
+
+void RaftMessageHandler::broadcast(Message *message)
+{
+    assert(message);
+
+    auto node = netnode.lock();
+    if (!node)
+        throw AppException("");
+
+    for (const auto & elem: node->member.memberList) {
+        if (elem.address == address())
+            continue;
+
+        auto raw = message->toRawMessage(address(), elem.address);
+        connection()->send(raw.get());
+    }
+}

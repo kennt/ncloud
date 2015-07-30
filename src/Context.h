@@ -19,6 +19,7 @@
 #include "Log.h"
 #include "Params.h"
 #include "Network.h"
+#include "Member.h"
 #include "Util.h"
 
 class ContextStoreInterface;
@@ -35,10 +36,6 @@ enum State {
     // This is the uninitialized state, the state has not
     // joined the cluster yet (hasn't send the ADD_SERVER message).
     NONE = 0,
-
-    // We are trying to join the cluster, but have not received
-    // a reply yet.
-    JOINING = 1,
 
     // Normal RAFT states
     FOLLOWER = 2,
@@ -116,6 +113,9 @@ public:
     // Writes out the entire context
     virtual void write(const Json::Value& value) = 0;
 
+    // Tests the store to see if it is empty
+    virtual bool empty() = 0;
+
     // Clears the storage and context
     // Calling read() after this will have no
     // effect on the values.
@@ -140,6 +140,7 @@ public:
 
     virtual Json::Value read() override;
     virtual void write(const Json::Value& value) override;
+    virtual bool empty() override;
     virtual void reset() override;
 };
 
@@ -160,6 +161,7 @@ public:
 
     virtual Json::Value read() override;
     virtual void write(const Json::Value& value) override;
+    virtual bool empty() override;
     virtual void reset() override;
 
     Params *par;
@@ -188,8 +190,9 @@ class RaftMessageHandler;
 
 struct Context
 {
-    Context() : handler(nullptr), store(nullptr), 
-        electionTimeout(0), heartbeatTimeout(0), currentState(State::NONE),
+    Context(Log *log, Params *par) : par(par), log(log),
+        handler(nullptr), store(nullptr), 
+        electionTimeout(0), currentState(State::NONE),
         commitIndex(0), lastAppliedIndex(0), currentTerm(0)
     {}
 
@@ -199,6 +202,9 @@ struct Context
     // ==================
     // Implementation variables
     // ==================
+
+    Params *                par;
+    Log *                   log;
 
     // Pointer to the handler that contains this context
     // The lifetime of the context is bound to the handler
@@ -213,11 +219,19 @@ struct Context
     // the store interface is held).
     ContextStoreInterface * store;
 
-    // Timeouts (real time) for the timeout.  These are kept here
-    // since the context state will be used/modified by these
-    // timeouts.
+    // The timeout for an election.  This is the absolute
+    // time when the timeout expires.  Setting this to 0
+    // is essentially infinite wait.
     int         electionTimeout;
-    int         heartbeatTimeout;
+
+    // The number of votes that have been received by this node
+    // in this voting cycle.
+    int         votesReceived;
+    // Total number of nodes in the group for this voting cycle.
+    // A mojority of nodes is needed before a node can become
+    // the leader.  If this is set to 0, then no election is
+    // taking place.
+    int         votesTotal;
 
 
     // ==================
@@ -246,7 +260,7 @@ struct Context
     int         currentTerm;
 
     // Candidate that received a vote in the current term (or null if none)
-    Address     candidateAddress;
+    Address     votedFor;
 
     // Membership changes are communicated as log changes.  See Sect 3.4.
     // log entries, each log entry contains command for the state machine,
@@ -287,6 +301,11 @@ struct Context
 
     // Perform any actions/checking of the timeout
     void onTimeout();
+
+    // Resets the timeout to current_time + election_timeout
+    void resetTimeout();
+
+    void startElection(const MemberInfo& member);
 };
 
 }

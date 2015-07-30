@@ -45,13 +45,11 @@ shared_ptr<Raft::AddServerReply> makeAddServerReply(const MockMessage *message,
 }
 #endif
 
-TEST_CASE("Raft basics", "[raft][startup]")
+TEST_CASE("Raft single-node startup", "[raft][startup]")
 {
     string  name("mockleader");
     // Basic startup test case
-    // Startup of THE initial leader node
-
-    // Create a much more minimal test network
+    // Create a mock test network
     Params *    par = new Params();
     Address     myAddr(0x64656667, 8080); // 100.101.102.103:8080
     auto network = MockNetwork::createNetwork(par);
@@ -65,7 +63,7 @@ TEST_CASE("Raft basics", "[raft][startup]")
 
     // Setup the timeouts
     par->electionTimeout = 10;
-    par->heartbeatTimeout = 5;
+    par->idleTimeout = 5;   // not used by the mock network
 
     // Startup with a null address
     SECTION("simple startup") {
@@ -193,4 +191,10 @@ TEST_CASE("Raft failover", "[raft][failover]") {
 
 // Test cases for log compaction
 
+// Full multi-node scenario test (no errors)
+// (tests full node-node interaction rather than simulated nodes)
+TEST_CASE("Raft multi-node startup", "[raft][full]") {
+    // Startup three nodes and have them communicate with each other
+    // One will be picked as the leader
+}
 

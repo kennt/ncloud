@@ -9,7 +9,8 @@
 #include "NetworkNode.h"
 
 NetworkNode::NetworkNode(string name, Log *log, Params *par, shared_ptr<INetwork> network)
-    : member(log, par), ring(log, par), receivedQuitMessage(false)
+    : member(log, par), ring(log, par), context(log, par),
+      receivedQuitMessage(false)
 {
     this->name = name;
     this->log = log;

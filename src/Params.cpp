@@ -26,7 +26,7 @@ Params::Params():
     singleFailure(false),
     CRUDTestType(TEST_TYPE::NONE),
     electionTimeout(0),
-    heartbeatTimeout(0),
+    idleTimeout(0),
     globaltime(0)
 {}
 
@@ -66,7 +66,7 @@ void Params::load(const char *config_file) {
         numberOfNodes = maxNumberOfNeighbors;
 
         electionTimeout = root.get("electionTimeout", 0).asInt();
-        heartbeatTimeout = root.get("electionTimeout", 0).asInt();
+        idleTimeout = root.get("idleTimeout", 0).asInt();
     }
     catch(exception & e) {
         throw AppException(string_format("Error reading in the config file: %s : %s",

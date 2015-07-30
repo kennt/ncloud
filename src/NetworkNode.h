@@ -34,7 +34,7 @@ public:
     virtual ~IMessageHandler() {}
 
     // Initializes the MessageHandler.
-    virtual void start(const Address& address) = 0;
+    virtual void start(const Address& joinAddress) = 0;
 
     // Called when a message has been received for this address.
     virtual void onMessageReceived(const RawMessage *message) = 0;

@@ -45,6 +45,11 @@ void MemoryBasedContextStore::write(const Json::Value& value)
     entries.emplace_back(par->getCurrtime(), time(NULL));
 }
 
+bool MemoryBasedContextStore::empty()
+{
+    return !current;
+}
+
 void MemoryBasedContextStore::reset()
 {
     entries.clear();
@@ -59,7 +64,6 @@ void Context::init(RaftMessageHandler *handler,
     this->handler = handler;
     this->store = store;
     this->electionTimeout = 0;
-    this->heartbeatTimeout = 0;
 
     // Start up as a follower node
     this->currentState = State::FOLLOWER;
@@ -68,11 +72,14 @@ void Context::init(RaftMessageHandler *handler,
 
     this->leaderAddress = nullAddress;
     this->currentTerm = 0;
-    this->candidateAddress = nullAddress;
+    this->votedFor = nullAddress;
     this->followers.clear();
 
     this->logEntries.clear();
     this->logEntries.emplace_back();
+
+    this->votesReceived = 0;
+    this->votesTotal = 0;
 
     // Reload the persisted state
     this->loadFromStore();
@@ -85,9 +92,14 @@ void Context::loadFromStore()
     if (!store)
         throw NetworkException("Raft::Context no store provided");
 
+    // Use the default values
+    //$ TODO: what to do on exceptions?
+    if (store->empty())
+        return;
+
     Json::Value root = store->read();
 
-    // Read in leaderAddress, currentTerm, candidateAddress
+    // Read in leaderAddress, currentTerm, votedForAddress
     // and log entries
     unsigned short port;
     port = root.get("leaderPort", 0).asInt();
@@ -96,9 +108,9 @@ void Context::loadFromStore()
 
     this->currentTerm = root.get("currentTerm", 0).asInt();
 
-    port = root.get("candidatePort", 0).asInt();
-    this->candidateAddress.parse(
-        root.get("candidateAddress", "0.0.0.0").asString().c_str(), port);
+    port = root.get("votedForPort", 0).asInt();
+    this->votedFor.parse(
+        root.get("votedFor", "0.0.0.0").asString().c_str(), port);
 
     Json::Value log = root["log"];
     for (int i=0; i<log.size(); i++) {
@@ -131,7 +143,7 @@ void Context::saveToStore()
 
     root["leaderAddress"] = this->leaderAddress.toString();
     root["currentTerm"] = this->currentTerm;
-    root["candidateAddress"] = this->candidateAddress.toString();
+    root["votedFor"] = this->votedFor.toString();
 
     Json::Value log;
     for (auto & entry: this->logEntries) {
@@ -192,5 +204,36 @@ void Context::onTimeout()
         }
         this->lastAppliedIndex = this->commitIndex;
     }
+}
+
+void Context::resetTimeout()
+{
+    this->electionTimeout = par->getCurrtime() + par->electionTimeout;
+}
+
+void Context::startElection(const MemberInfo& member)
+{
+    DEBUG_LOG(this->handler->address(),
+        "Starting election : term %d", this->currentTerm+1);
+
+    // Increment current term
+    this->currentTerm++;
+
+    // Vote for ourselves
+    this->votesTotal = static_cast<int>(member.memberList.size());
+    this->votesReceived = 1;
+
+    // Reset election timer
+    this->resetTimeout();
+
+    // Send RequestVote RPCs to all other servers
+    RequestVoteMessage  request;
+    request.transId = this->handler->getNextMessageId();
+    request.term = this->currentTerm;
+    request.candidate = this->handler->address();
+    request.lastLogIndex = static_cast<int>(this->logEntries.size()-1);
+    request.lastLogTerm = this->logEntries.back().termReceived;
+
+    this->handler->broadcast(&request);
 }
 

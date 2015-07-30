@@ -68,8 +68,11 @@ public:
     // Timeout before starting a new election
     int     electionTimeout;
 
-    // Timeout before sending a heartbeat
-    int     heartbeatTimeout;
+    // Idle timeout, this it the length of time between
+    // idle periods.  This should be less than the electionTimeout
+    // so that we are sure to send out heartbeats to prevent
+    // unnecessary elections.
+    int     idleTimeout;
 
     // =====
     // End - RAFT PARAMS

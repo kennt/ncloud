@@ -215,6 +215,13 @@ public:
         this->port = port;
     }
 
+    void clear()
+    {
+        addrtype = AddressType::None;
+        ipaddr = 0;
+        port = 0;
+    }
+
 protected:
     AddressType     addrtype;
     unsigned int    ipaddr;

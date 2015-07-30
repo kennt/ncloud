@@ -52,8 +52,9 @@ class Message
 public:
     MessageType     msgtype;
     int             transId;
+    int             term;
 
-    Message(MessageType mt) : msgtype(mt), transId(0) {}
+    Message(MessageType mt) : msgtype(mt), transId(0), term(0) {}
 
     virtual ~Message() = default;
     Message(Message &&) = default;
@@ -70,6 +71,22 @@ public:
     virtual unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to) = 0; 
 
     static MessageType getMessageType(const byte *data, size_t size);
+
+    // Helper methods for writing/reading to binary
+    void write(stringstream& ss);
+    void read(istringstream& ss);
+};
+
+// Use this class to read in only the message header
+// Used to simplify parts of the code that need to check the 
+// header before taking action.
+class HeaderOnlyMessage : public Message
+{
+public:
+    HeaderOnlyMessage() : Message(MessageType::MSGTYPE_NONE) {}
+
+    virtual void load(istringstream& ss) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
 class AppendEntriesMessage : public Message
@@ -78,7 +95,7 @@ public:
     // Implied MessageType::APPEND_ENTRIES
 
     // leader's term
-    int         term;
+    // int         term;
 
     // so follower can redirect clients
     Address     leaderAddress;
@@ -96,7 +113,7 @@ public:
     // leader's commit index
     int         leaderCommit;
 
-    AppendEntriesMessage() : Message(APPEND_ENTRIES), term(0), prevLogIndex(0), prevLogTerm(0), leaderCommit(0)
+    AppendEntriesMessage() : Message(APPEND_ENTRIES), prevLogIndex(0), prevLogTerm(0), leaderCommit(0)
     {}
 
     virtual void load(istringstream& ss) override;
@@ -109,12 +126,12 @@ public:
     // Implied MessageType::APPEND_ENTRIES_REPLY
 
     // currentTerm, for the leader to update itself
-    int         term;
+    // int         term;
 
     // true if follower contained entry matching prevLogIndex and prevLogTerm
     bool        success;
 
-    AppendEntriesReply() : Message(APPEND_ENTRIES_REPLY), term(0), success(false)
+    AppendEntriesReply() : Message(APPEND_ENTRIES_REPLY), success(false)
     {}
 
     virtual void load(istringstream& ss) override;
@@ -127,10 +144,10 @@ public:
     // Implied MessageType::REQUEST_VOTE
 
     // candidate's term
-    int         term;
+    // int         term;
 
     // candidate requesting vote
-    Address     candidateAddress;
+    Address     candidate;
 
     // index of candidate's last log entry
     int         lastLogIndex;
@@ -139,7 +156,7 @@ public:
     int         lastLogTerm;
 
     
-    RequestVoteMessage() : Message(REQUEST_VOTE), term(0), lastLogIndex(0), lastLogTerm(0)
+    RequestVoteMessage() : Message(REQUEST_VOTE), lastLogIndex(0), lastLogTerm(0)
     {}
 
     virtual void load(istringstream& ss) override;
@@ -152,12 +169,12 @@ public:
     // Implied MessageType::REQUEST_VOTE_REPLY
 
     // currentTerm, for candidate to update itself
-    int         term;
+    // int         term;
 
     // true means the candidate received the vote
     bool        voteGranted;
 
-    RequestVoteReply() : Message(REQUEST_VOTE_REPLY), term(0), voteGranted(false)
+    RequestVoteReply() : Message(REQUEST_VOTE_REPLY), voteGranted(false)
     {}
 
     virtual void load(istringstream& ss) override;
@@ -212,7 +229,7 @@ public:
                       shared_ptr<NetworkNode> netnode,
                       shared_ptr<IConnection> connection)
         : log(log), par(par), store(store), netnode(netnode),
-            connection(connection), nextHeartbeat(0), nextMessageId(0)
+            connection_(connection), nextHeartbeat(0), nextMessageId(0)
     {
     };
 
@@ -258,12 +275,28 @@ public:
     void applyLogEntry(Command command, const Address& address);
     void applyLogEntry(const RaftLogEntry& entry);
 
+    // Returns true if the log is up-to-date
+    // i.e. the last entry of the log is equal to term
+    // or in this case log.size()-1 == index and log[index] == term
+    // (subtract 1 from the size due to the 0th entry)
+    bool isLogCurrent(int index, int term);
+
+    void resetTimeouts(int timeouts);
+
+    int getNextMessageId() { return ++nextMessageId; }
+    Address address() { return connection_->address(); }
+    shared_ptr<IConnection> connection() { return connection_; }
+
+    // Broadcasts a message to all members
+    // (skips self).
+    void broadcast(Message *message);
+
 protected:
     Log *                   log;
     Params *                par;
     ContextStoreInterface * store;
     weak_ptr<NetworkNode>   netnode;
-    shared_ptr<IConnection> connection;
+    shared_ptr<IConnection> connection_;
 
     // This can be built from the log by executing all
     // of the log entries.
@@ -280,12 +313,9 @@ protected:
     // Unique id used to track messages/transactions
     int                     nextMessageId;
 
-
     // Specific reply-handlers
     void onAppendEntriesReply(const Address& from, istringstream& ss);
     void onRequestVoteReply(const Address& from, istringstream& ss);
-    void onAddServerReply(const Address& from, istringstream& ss);
-    void onRemoveServerReply(const Address& from, istringstream& ss);
 };
 
 }
