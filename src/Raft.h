@@ -182,32 +182,85 @@ public:
 };
 
 
-// The RaftMessageHandler uses message IDs as a way to distringuish RPC replies.
-// Due to the network, replies may be received out-of-order.  Thus we use
-// this map to keep track of our outstanding transactions.
+// Transactions are used to track RPCs and their replies.  This are
+// started and then checked periodically within the onTimeout() call.
 //
-// Also, messages that are received after the timeout has passed are dropped
-// with no further notificqtion.  The callbacks are optional.  Only one of the
-// onTimeout() on onReply() will be called.
+// In Raft, RPCs are long-lived and can stay alive indefinitely.
+//
+// These transactions may also be used for timer functions.
+//
+// The onTimeout() callback is only called when the timeout is non-zero.
 //
 struct Transaction
 {
+    enum class RESULT { KEEP=0, DELETE };
+    enum INDEX { ELECTION = -10, HEARTBEAT = -9 };
+
+    Log *       log;
+
+    // This is ususally the message transId, but may be
+    // set to a negative value (for non-message transactions).
     int         transId;
+    int         term;
 
-    // So this transaction expires on timeSent + timeout
-    int         timeSent;
+    // The timeout callback will be called when
+    //      current_time >= (timeStart + timeout*nTimeouts)
+    // Note that this will be called whenever this condition
+    // is true.  To disable, set timeStart to -1.
+    int         timeStart;
     int         timeout;
+    // The multiplier used for timeouts (starts at 1).
+    // Incremented each time a timeout occurs.
+    int         nTimeouts;
 
-    // The original message that was sent
-    Address     toAddress;
-    shared_ptr<Message> message;
+    // The original message and command that caused this message
+    // Note that both may be set (a client command that causes
+    // a message to be sent).  Either (or both) may be set to nullptr.
+    shared_ptr<Message> original;
+    shared_ptr<Command> command;
 
-    Transaction() : transId(0), timeSent(0), timeout(0) {}
-    Transaction(int transid, int timesent, int timeout, const Address&to,
-            shared_ptr<Message> message)
-        : transId(transid), timeSent(timesent), timeout(timeout),
-        toAddress(to), message(message)
-    {}
+    // Recipient addresses (for non-response). This collection
+    // may be modified from a callback. One use case is for 
+    // RPCs that need to resend requests
+    vector<Address> recipients;
+
+    // Used for calculating majority voting
+    int         total;
+    int         successes;
+    int         failures;
+
+    weak_ptr<NetworkNode>   netnode;
+
+    Transaction(Log *log, Params *par, shared_ptr<NetworkNode> node) 
+        : log(log), transId(0), term(0),
+        timeStart(-1), timeout(0), nTimeouts(1),
+        total(0), successes(0), failures(0),
+        netnode(node)
+        {
+            timeStart = par->getCurrtime();
+        }
+
+    // Starts the timeout handling
+    void start(int start, int interval)
+        { timeStart = start; timeout = interval; nTimeouts = 1; }
+
+    void reset(int newStart)
+        { timeStart = newStart; nTimeouts = 1; }
+
+    // Stops the timeout handling (the callbacks will not be invoked).
+    void stop() { timeStart = -1; }
+
+    bool isTimedOut(int currtime)
+    {
+        if (timeStart == -1)
+            return false;
+        return currtime >= (timeStart + (nTimeouts * timeout));
+    }
+
+    // Returns RESULT::DELETE to remove this transaction
+    // Returns RESULT::KEEP otherwise
+    std::function<RESULT (Transaction *thisTrans)>   onTimeout;
+    std::function<RESULT (Transaction *thisTrans, shared_ptr<Message>)>   onReceived;
 };
 
 
@@ -238,8 +291,15 @@ public:
     // Initializes the MessageHandler, if needed. This will be called
     // before onMessageReceived() or onTimeout() will be called.
     //
-    // For Raft, the address parameter is not used.
-    virtual void start(const Address &unused) override;    
+    // For Raft, the address parameter is the "initial" leader.
+    // The machine with this address will initialize its log
+    // and start an election immediately, all other servers will
+    // follow the normal startup path.
+    //
+    // Setting the address to the leader is meant for initial
+    // cluster startup.  After that, a zero address should be
+    // passed in.
+    virtual void start(const Address &leader) override;    
 
     // This is called when a message has been received.  This may be
     // called more than once for a timeslice.
@@ -255,20 +315,23 @@ public:
     // Replies are all handled here.  This is a dispatcher which
     // calls the separate onXXXReply() callbakcs and also cleans
     // up the transactions.
-    void onReply(const Address& from, MessageType mt, istringstream& ss);
+    void onReply(const Address& from, const HeaderOnlyMessage& header, istringstream& ss);
 
     // Handlers for command messages
     // i.e. those messages received via JSON command messages
     void onAddServerCommand(shared_ptr<CommandMessage> command, const Address& address);
     void onRemoveServerCommand(shared_ptr<CommandMessage> command, const Address& address);
 
-    // Transaction apis
-    void openTransaction(int transId,
-                         int timeout,
-                         const Address& to,
-                         shared_ptr<Message> message);
-    void closeTransaction(int transId);
+    // Transaction support
+    shared_ptr<Transaction> findTransaction(int transid);    
 
+    // Create the timeout transactions, these are initially 
+    // deactivated (timeout == 0). To start processing,
+    // set the timeStart and timeout values.
+    void initTimeoutTransactions();
+    Transaction::RESULT onElectionTimeout(Transaction *trans);
+    Transaction::RESULT onHeartbeatTimeout(Transaction *trans);
+    
     // State manipulation APIs
     // This will not add the entry to the log, it applies the
     // change to the "state machine"
@@ -280,8 +343,6 @@ public:
     // or in this case log.size()-1 == index and log[index] == term
     // (subtract 1 from the size due to the 0th entry)
     bool isLogCurrent(int index, int term);
-
-    void resetTimeouts(int timeouts);
 
     int getNextMessageId() { return ++nextMessageId; }
     Address address() { return connection_->address(); }
@@ -307,11 +368,14 @@ protected:
     int                     nextHeartbeat;
 
     // List of currently open transactions
-    //$ TODO: maybe keep sorted based on timeout?
-    map<int, Transaction>   transactions;
+    map<int, shared_ptr<Transaction>>   transactions;
 
     // Unique id used to track messages/transactions
     int                     nextMessageId;
+
+    // Hwlpful pointers to common transactions
+    shared_ptr<Transaction> election;
+    shared_ptr<Transaction> heartbeat;
 
     // Specific reply-handlers
     void onAppendEntriesReply(const Address& from, istringstream& ss);

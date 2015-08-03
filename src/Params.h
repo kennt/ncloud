@@ -74,6 +74,10 @@ public:
     // unnecessary elections.
     int     idleTimeout;
 
+    // Length of time allowed for an RPC request. The RPC
+    // will be resent if a reply is not receive within this timeout.
+    int     rpcTimeout;
+
     // =====
     // End - RAFT PARAMS
 

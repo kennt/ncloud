@@ -11,6 +11,7 @@
 #include "json/json.h"
 
 using namespace Raft;
+using std::placeholders::_1;
 
 void Raft::Message::write(stringstream& ss)
 {
@@ -157,7 +158,7 @@ void RequestVoteReply::load(istringstream& is)
 }
 
 
-void RaftMessageHandler::start(const Address &unused)
+void RaftMessageHandler::start(const Address &leader)
 {
     auto node = netnode.lock();
     if (!node)
@@ -168,11 +169,42 @@ void RaftMessageHandler::start(const Address &unused)
 
     node->member.memberList.clear();
 
-    DEBUG_LOG(connection_->address(), "starting up...");
+    DEBUG_LOG(connection()->address(), "starting up...");
     node->context.init(this, store);
 
-    // start the election timeout
-    node->context.resetTimeout();
+    // Setup the various timeout callbacks
+    //  - electionTimeout
+    //  - heartbeatTimeout
+    initTimeoutTransactions();
+
+    // Special case (for initial cluster startup)
+    if (connection()->address() == leader) {
+        if (!node->context.store->empty()) {
+            // The log is not empty. This codepath
+            // is meant for initial cluster startup (not
+            // for an already existing cluster).
+            throw AppException("log already exists, unsupported scenario");
+        }
+
+        // IF we are the designated leader, then initialize
+        // the log with our own membership.
+        node->context.addMember(connection()->address());
+
+        // commit the membership list change
+        node->context.saveToStore();
+
+        // Move to a new term (this is to ensure that we win
+        // the election with other just-started up nodes)
+        node->context.currentTerm++;
+
+        // Special case!  Have the node start an election
+        // immediately!
+        node->context.currentState = State::CANDIDATE;
+        node->context.startElection(node->member, election.get());
+    }
+
+    // Start the election timeout
+    election->start(par->getCurrtime(), par->electionTimeout);
 }
 
 // This is a callback and is called when the connection has received
@@ -223,7 +255,7 @@ void RaftMessageHandler::onMessageReceived(const RawMessage *raw)
             break;
         case MessageType::APPEND_ENTRIES_REPLY:
         case MessageType::REQUEST_VOTE_REPLY:
-            onReply(raw->fromAddress, header.msgtype, ss);
+            onReply(raw->fromAddress, header, ss);
             break;
         default:
             throw NetworkException(string_format("Unknown message type: %d", header.msgtype).c_str());
@@ -257,7 +289,7 @@ void RaftMessageHandler::onAppendEntries(const Address& from, istringstream& ss)
 
     // if from current leader, reset timeout
     if (from == node->context.leaderAddress)
-        node->context.resetTimeout();
+        election->reset(par->getCurrtime());
 }
 
 void RaftMessageHandler::onRequestVote(const Address& from, istringstream& ss)
@@ -291,22 +323,43 @@ void RaftMessageHandler::onRequestVote(const Address& from, istringstream& ss)
     connection()->send(raw.get());
 
     // If we have voted, reset the timeout
-    node->context.resetTimeout();
+    election->reset(par->getCurrtime());
 }
 
-void RaftMessageHandler::onReply(const Address&from, MessageType mt, istringstream& ss)
+void RaftMessageHandler::onReply(const Address&from, const HeaderOnlyMessage& header, istringstream& ss)
 {
-    switch (mt) {
+    auto trans = findTransaction(header.transId);
+    if (!trans)
+        return;     // nothing to do here, cannot find transaction
+
+    if (trans->onReceived == nullptr)
+        return;     // no callback, nothing to do
+
+    // Load the message
+    shared_ptr<Message> message;
+    switch (header.msgtype) {
         case APPEND_ENTRIES_REPLY:
-            onAppendEntriesReply(from, ss);
+            {
+                auto reply = make_shared<AppendEntriesReply>();
+                reply->load(ss);
+                message = reply;
+            }
             break;
         case REQUEST_VOTE_REPLY:
-            onRequestVoteReply(from, ss);
+            {
+                auto reply = make_shared<RequestVoteReply>();
+                reply->load(ss);
+                message = reply;
+            }
             break;
         default:
             throw NYIException("reply handler", __FILE__, __LINE__);
             break;
     }
+
+    auto result = trans->onReceived(trans.get(), message);
+    if (result == Transaction::RESULT::DELETE)
+        transactions.erase(header.transId);
 }
 
 void RaftMessageHandler::onAppendEntriesReply(const Address& from, istringstream& ss)
@@ -387,70 +440,29 @@ void RaftMessageHandler::onTimeout()
     if (!node)
         throw AppException("Network has been deleted");
 
-    // Wait until you're in the group
-    //if (!node->member.inGroup)
-    //    return;
+    // Process transaction timeouts
+    vector<int> idsToRemove;
+    int currtime = par->getCurrtime();
+    for (auto & elem : transactions) {
+        if (elem.second->isTimedOut(currtime)) {
+            elem.second->nTimeouts++;
+            if (elem.second->onTimeout == nullptr)
+                continue;
+            if (elem.second->onTimeout(elem.second.get()) == Transaction::RESULT::DELETE) {
+                // remove this transaction
+                idsToRemove.push_back(elem.first);
+            }
+        }
+    }
+    for (auto id : idsToRemove) {
+        transactions.erase(id);
+    }
 
+    // Take care of any internal context actions
+    // (usually not time-based but are triggered by
+    // changes within the context).
     node->context.onTimeout();
 
-    // If leader, send heartbeats
-    if (node->context.currentState == State::LEADER) {
-        if (nextHeartbeat > par->getCurrtime()) {
-            //$ TODO: send heartbeat to all followers
-            node->context.resetTimeout();
-        }
-    }
-    else if (node->context.currentState == State::FOLLOWER) {
-        // If it times out and we haven't voted for anyone this
-        // term, then convert to candidate
-        if (node->context.electionTimeout >= par->getCurrtime() &&
-            node->context.votedFor.isZero()) {
-            // Election timeout!
-            node->context.currentState = State::CANDIDATE;
-            node->context.startElection(node->member);
-        }
-    }
-    else if (node->context.currentState == State::CANDIDATE) {
-        // Check our vote totals
-        if ((2 * node->context.votesReceived) > node->context.votesTotal) {
-            // majority vote, we have become the leader
-            node->context.leaderAddress = connection()->address();
-            node->context.currentState = State::LEADER;
-
-            // broadcast heartbeats
-            AppendEntriesMessage    message;
-            message.transId = getNextMessageId();
-            message.term = node->context.currentTerm;
-            message.leaderAddress = connection()->address();
-            message.prevLogIndex = node->context.logEntries.size()-1;
-            message.prevLogTerm = node->context.logEntries[message.prevLogIndex].termReceived;
-            message.leaderCommit = node->context.commitIndex;
-            
-            broadcast(&message);
-        }
-        else if (node->context.electionTimeout >= par->getCurrtime()) {
-            // election timeout, start new election
-            node->context.startElection(node->member);
-        }
-    }
-}
-
-void RaftMessageHandler::openTransaction(int transId,
-                                         int timeout,
-                                         const Address& to,
-                                         shared_ptr<Message> message)
-{
-    Transaction     trans(transId, par->getCurrtime(), timeout,
-                          to, message);
-    transactions[transId] = trans;
-}
-
-void RaftMessageHandler::closeTransaction(int transId)
-{
-    auto it = transactions.find(transId);
-    if (it != transactions.end()) {
-        transactions.erase(it);
-    }
 }
 
 // The actual Raft state machine (for our application) is
@@ -515,4 +527,101 @@ void RaftMessageHandler::broadcast(Message *message)
         auto raw = message->toRawMessage(address(), elem.address);
         connection()->send(raw.get());
     }
+}
+
+shared_ptr<Transaction> RaftMessageHandler::findTransaction(int transid)
+{
+    auto it = transactions.find(transid);
+    if (it == transactions.end())
+        return nullptr;
+    return it->second;
+}
+
+void RaftMessageHandler::initTimeoutTransactions()
+{
+    auto node = netnode.lock();
+    if (!node)
+        throw AppException("");
+
+    // Create the transaction for the election timeout
+    auto trans = make_shared<Transaction>(log, par, node);
+    trans->transId = Transaction::INDEX::ELECTION;
+    trans->onTimeout = std::bind(&RaftMessageHandler::onElectionTimeout, this, _1);
+    transactions[trans->transId] = trans;
+    this->election = trans;
+
+    // Create the transaction for the heartbeat timeout
+    trans = make_shared<Transaction>(log, par, node);
+    trans->transId = Transaction::INDEX::HEARTBEAT;
+    trans->onTimeout = std::bind(&RaftMessageHandler::onHeartbeatTimeout, this, _1);
+    transactions[trans->transId] = trans;
+    this->heartbeat = trans;
+}
+
+Transaction::RESULT RaftMessageHandler::onElectionTimeout(Transaction *trans)
+{
+    auto node = netnode.lock();
+    if (!node)
+        throw AppException("");
+
+    if (node->context.currentState == State::FOLLOWER) {
+        // If it times out and we haven't voted for anyone this
+        // term, then convert to candidate
+        //
+        // Since we reset the timeout when we receive an append_entries
+        // or reply to a request_vote this only triggers when we haven't
+        // seen either for a while
+        //
+        // Can't start an election if there are no members
+        if (node->context.votedFor.isZero() &&
+            !node->member.memberList.empty()) {
+            // Election timeout!
+            node->context.currentState = State::CANDIDATE;
+            node->context.startElection(node->member, trans);
+        }
+    }
+    else if (node->context.currentState == State::CANDIDATE) {
+        // Check our vote totals
+        if ((trans->total > 0) && (2*trans->successes > trans->total)) {
+            // majority vote, we have become the leader
+            node->context.leaderAddress = connection()->address();
+            node->context.currentState = State::LEADER;
+
+            // Turn off the election processing
+            trans->successes = trans->failures = trans->total = 0;
+
+            // broadcast heartbeats
+            AppendEntriesMessage    message;
+            message.transId = getNextMessageId();
+            message.term = node->context.currentTerm;
+            message.leaderAddress = connection()->address();
+            message.prevLogIndex = node->context.logEntries.size()-1;
+            message.prevLogTerm = node->context.logEntries[message.prevLogIndex].termReceived;
+            message.leaderCommit = node->context.commitIndex;
+            
+            broadcast(&message);
+        }
+        else {
+            // election timeout, start a new election
+            node->context.startElection(node->member, trans);
+        }
+    }
+
+    return Transaction::RESULT::KEEP;
+}
+
+Transaction::RESULT RaftMessageHandler::onHeartbeatTimeout(Transaction *trans)
+{
+    auto node = netnode.lock();
+    if (!node)
+        throw AppException("");
+
+    // If leader, send heartbeats
+    if (node->context.currentState == State::LEADER) {
+        if (nextHeartbeat > par->getCurrtime()) {
+            //$ TODO: send heartbeat to all followers
+            throw NYIException("broadcast heartbeats", __FILE__, __LINE__);
+        }
+    }
+    return Transaction::RESULT::KEEP;
 }

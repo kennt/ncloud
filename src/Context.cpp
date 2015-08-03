@@ -59,27 +59,21 @@ void MemoryBasedContextStore::reset()
 void Context::init(RaftMessageHandler *handler,
                    ContextStoreInterface *store)
 {
-    Address     nullAddress;    // 0.0.0.0:0
-
     this->handler = handler;
     this->store = store;
-    this->electionTimeout = 0;
 
     // Start up as a follower node
     this->currentState = State::FOLLOWER;
     this->commitIndex = 0;
     this->lastAppliedIndex = 0;
 
-    this->leaderAddress = nullAddress;
+    this->leaderAddress.clear();
     this->currentTerm = 0;
-    this->votedFor = nullAddress;
+    this->votedFor.clear();
     this->followers.clear();
 
     this->logEntries.clear();
     this->logEntries.emplace_back();
-
-    this->votesReceived = 0;
-    this->votesTotal = 0;
 
     // Reload the persisted state
     this->loadFromStore();
@@ -206,12 +200,7 @@ void Context::onTimeout()
     }
 }
 
-void Context::resetTimeout()
-{
-    this->electionTimeout = par->getCurrtime() + par->electionTimeout;
-}
-
-void Context::startElection(const MemberInfo& member)
+void Context::startElection(const MemberInfo& member, Raft::Transaction *trans)
 {
     DEBUG_LOG(this->handler->address(),
         "Starting election : term %d", this->currentTerm+1);
@@ -220,11 +209,17 @@ void Context::startElection(const MemberInfo& member)
     this->currentTerm++;
 
     // Vote for ourselves
-    this->votesTotal = static_cast<int>(member.memberList.size());
-    this->votesReceived = 1;
+    trans->total = static_cast<int>(member.memberList.size());
+    trans->successes = 1;
+    trans->failures = 0;
+    trans->term = this->currentTerm;
+
+    assert(trans->total > 0);
+
+    this->votedFor = this->handler->address();
 
     // Reset election timer
-    this->resetTimeout();
+    trans->reset(par->getCurrtime());
 
     // Send RequestVote RPCs to all other servers
     RequestVoteMessage  request;

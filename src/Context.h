@@ -28,6 +28,8 @@ class NetworkNode;
 
 namespace Raft {
 
+struct Transaction;
+
 // ================
 // System states (for the state table)
 // ================
@@ -38,9 +40,9 @@ enum State {
     NONE = 0,
 
     // Normal RAFT states
-    FOLLOWER = 2,
-    CANDIDATE = 3,
-    LEADER = 4
+    FOLLOWER,
+    CANDIDATE,
+    LEADER
 };
 
 
@@ -52,7 +54,8 @@ enum State {
 // (Note that operations are performed one server address at a time).
 // ================
 enum Command {
-    CMD_NONE = 0,
+    CMD_NONE = 0,       // This should not appear in the log
+    CMD_NOOP,
     CMD_ADD_SERVER,
     CMD_REMOVE_SERVER
 };
@@ -192,7 +195,7 @@ struct Context
 {
     Context(Log *log, Params *par) : par(par), log(log),
         handler(nullptr), store(nullptr), 
-        electionTimeout(0), currentState(State::NONE),
+        currentState(State::NONE),
         commitIndex(0), lastAppliedIndex(0), currentTerm(0)
     {}
 
@@ -218,21 +221,6 @@ struct Context
     // lifetime of the context object (thus just a pointer to
     // the store interface is held).
     ContextStoreInterface * store;
-
-    // The timeout for an election.  This is the absolute
-    // time when the timeout expires.  Setting this to 0
-    // is essentially infinite wait.
-    int         electionTimeout;
-
-    // The number of votes that have been received by this node
-    // in this voting cycle.
-    int         votesReceived;
-    // Total number of nodes in the group for this voting cycle.
-    // A mojority of nodes is needed before a node can become
-    // the leader.  If this is set to 0, then no election is
-    // taking place.
-    int         votesTotal;
-
 
     // ==================
     // Volatile state stored on all servers
@@ -302,10 +290,7 @@ struct Context
     // Perform any actions/checking of the timeout
     void onTimeout();
 
-    // Resets the timeout to current_time + election_timeout
-    void resetTimeout();
-
-    void startElection(const MemberInfo& member);
+    void startElection(const MemberInfo& member, Raft::Transaction *trans);
 };
 
 }

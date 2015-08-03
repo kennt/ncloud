@@ -18,33 +18,6 @@ using namespace Raft;
 // Although, sometimes specific calls to look at the internals of the RAFT
 // state may be needed.
 
-#if 0
-shared_ptr<Raft::AddServerReply> makeAddServerReply(const MockMessage *message,
-                                                    bool status,
-                                                    const Address& leaderHint)
-{
-    istringstream ss(std::string((const char *)message->data.get(),
-                                 message->dataSize));
-    MessageType msgtype = static_cast<MessageType>(read_raw<int>(ss));
-    ss.seekg(0, ss.beg);    // reset to start of the buffer
-
-    // Validate that the MockMessage is an ADD_SERVER
-    if (msgtype != Raft::MessageType::ADD_SERVER)
-        throw AppException("not an ADD_SERVER message, cannot build reply");
-
-    // Construct a reply from the AddServerMessage
-    AddServerMessage    addServerMessage;
-    addServerMessage.load(ss);
-
-    auto reply = make_shared<AddServerReply>();
-    reply->transId = addServerMessage.transId;
-    reply->status = status;
-    reply->leaderHint = leaderHint;
-
-    return reply;
-}
-#endif
-
 TEST_CASE("Raft single-node startup", "[raft][startup]")
 {
     string  name("mockleader");
@@ -54,19 +27,20 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
     Address     myAddr(0x64656667, 8080); // 100.101.102.103:8080
     auto network = MockNetwork::createNetwork(par);
     auto conn = network->create(myAddr);
+    auto mockconn = network->findMockConnection(myAddr);
     Address     nullAddress;    // 0.0.0.0:0
 
     // Connection and address for a dummy leader node
     Address     leaderAddr(0x64656667, 9000); // 100.101.102.103:9000
     auto leaderConn = network->create(leaderAddr);
 
-
     // Setup the timeouts
     par->electionTimeout = 10;
     par->idleTimeout = 5;   // not used by the mock network
+    par->rpcTimeout = 5;
 
-    // Startup with a null address
-    SECTION("simple startup") {
+    // Startup (as a leader)
+    SECTION("simple startup as a leader") {
         Raft::MemoryBasedContextStore store(par);
 
         par->resetCurrtime();
@@ -78,11 +52,10 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
                                  conn,
                                  rafthandler);
 
-        REQUIRE( nullAddress.isZero() );
-
-        // Node will start up normally as a follower
-        // Not really different from the normal case
-        netnode->nodeStart(nullAddress, 10);
+        // Node will start up as a follower, but follows
+        // a special codepath where it will initialize the
+        // log.
+        netnode->nodeStart(myAddr, 10);
 
         REQUIRE(netnode->context.currentState == Raft::State::FOLLOWER);
 
@@ -91,6 +64,8 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
         REQUIRE(netnode->member.inited == true);
         REQUIRE(netnode->member.inGroup == false);
         REQUIRE(netnode->member.memberList.size() == 0);
+
+        int term = netnode->context.currentTerm;
 
         // After it timesout, should transition to a candidate
         // then transition to a leader (since there is only one
@@ -103,9 +78,14 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
         REQUIRE(netnode->context.currentState == Raft::State::CANDIDATE);
 
         // Since this became a candidate
-        // Increment current term
+        // (check for incremented term)
+        REQUIRE((term+1) == netnode->context.currentTerm);
         // (check for vote for self)
-        // (check for RPCs)
+        REQUIRE(myAddr == netnode->context.votedFor);
+        // (check for RPCs), should be none since only one node
+        REQUIRE(mockconn->messagesSent == 0);
+        // Should still be no leader
+        REQUIRE(netnode->context.leaderAddress.isZero());
 
         // On the next timeout, check for majority of votes (should have
         // it, since this is the only node).
@@ -116,7 +96,9 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
         REQUIRE(netnode->context.currentState == Raft::State::LEADER);
 
 
-        // Election won, should be a leader        
+        // Election won, should be a leader      
+
+        // Send a query to see who is the leader?  
 
         // What is the expected log state?
         // Check the log, there should be a single entry for adding itself
