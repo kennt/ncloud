@@ -134,7 +134,7 @@ public:
 
     // Returns true if all fields are 0.  This is typically used to
     // check if the address has been set (all fields are initialized to 0).
-    bool isZero() const
+    bool operator!() const
     {
         return ipaddr == 0 && port == 0;
     }

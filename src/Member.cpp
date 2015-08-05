@@ -23,3 +23,12 @@ void MemberInfo::removeFromMemberList(const Address &address)
 		}
 	}
 }
+
+bool MemberInfo::isMember(const Address& address)
+{
+	for (auto & elem: memberList) {
+		if (elem.address == address)
+			return true;
+	}
+	return false;
+}

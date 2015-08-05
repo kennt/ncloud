@@ -202,7 +202,7 @@ void CommandMessageHandler::onMessageReceived(const RawMessage *raw)
             break;
         case CommandType::CRAFT_GETLEADER:
             reply = command->makeReply(true);
-            reply->address = node->context.leaderAddress;            
+            reply->address = node->context.currentLeader;            
             break;
         case CommandType::CRAFT_ADDSERVER:
             //$ TODO: send an AddServer request to the leader

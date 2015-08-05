@@ -186,16 +186,14 @@ void RaftMessageHandler::start(const Address &leader)
             throw AppException("log already exists, unsupported scenario");
         }
 
+        node->member.inGroup = true;
+
         // IF we are the designated leader, then initialize
         // the log with our own membership.
         node->context.addMember(connection()->address());
 
         // commit the membership list change
         node->context.saveToStore();
-
-        // Move to a new term (this is to ensure that we win
-        // the election with other just-started up nodes)
-        node->context.currentTerm++;
 
         // Special case!  Have the node start an election
         // immediately!
@@ -224,14 +222,6 @@ void RaftMessageHandler::onMessageReceived(const RawMessage *raw)
     header.load(ss);
     ss.seekg(0, ss.beg);    // reset to start of the buffer
 
-    // If we do not belong to a group, then do not handle any
-    // client requests.
-    if (!node->member.inGroup) {
-        DEBUG_LOG(connection_->address(),
-            "message dropped, not in group yet");
-        return;
-    }
-
     if (header.term > node->context.currentTerm) {
         //$ CHECK: Does this state change happen before
         // or after RPC handling?  Does this cause the
@@ -241,9 +231,13 @@ void RaftMessageHandler::onMessageReceived(const RawMessage *raw)
             node->context.currentTerm, header.term);
         node->context.currentTerm = header.term;
         node->context.currentState = State::FOLLOWER;
+        node->context.currentLeader = raw->fromAddress;
 
         // new term, clear the lastVotedFor
         node->context.votedFor.clear();
+
+        // If there is one started, no need to keep it processing
+        election->cancelElection();
     }
 
     switch(header.msgtype) {
@@ -277,19 +271,37 @@ void RaftMessageHandler::onAppendEntries(const Address& from, istringstream& ss)
 
     AppendEntriesReply  reply;
 
+    reply.term = node->context.currentTerm;
+
     if (message->term < node->context.currentTerm) {
         reply.success = false;
-        reply.term = node->context.currentTerm;
     }
-    else if (node->context.logEntries[message->prevLogIndex].termReceived != message->prevLogTerm) {
+    else if ((message->prevLogIndex > (node->context.logEntries.size()-1)) ||
+              message->prevLogTerm != node->context.logEntries[message->prevLogIndex].termReceived) {
         reply.success = false;
-        //$ TODO: Do I need to reply with the current term?
-        throw NYIException("Raft AppendEntries", __FILE__, __LINE__);
+    }
+    else {
+        // Add the new entries to the log
+        // prevLogIndex is the index BEFORE the new entries, thus
+        // actual new entry is at prevLogIndex+1
+        node->context.addEntries(message->prevLogIndex+1, message->entries);
+
+        if (message->leaderCommit > node->context.commitIndex) {
+            node->context.commitIndex = 
+                std::min(message->leaderCommit,
+                         (int)(message->prevLogIndex + message->entries.size()));
+            node->context.applyCommittedEntries();
+        }
+
+        // This node is up-to-date with the leader
+        reply.success = true;
     }
 
     // if from current leader, reset timeout
-    if (from == node->context.leaderAddress)
+    if (from == node->context.currentLeader)
         election->reset(par->getCurrtime());
+    auto raw = reply.toRawMessage(address(), from);
+    this->connection()->send(raw.get());
 }
 
 void RaftMessageHandler::onRequestVote(const Address& from, istringstream& ss)
@@ -313,7 +325,7 @@ void RaftMessageHandler::onRequestVote(const Address& from, istringstream& ss)
     if (request.term < node->context.currentTerm) {
         reply.voteGranted = false;
     }
-    else if ((node->context.votedFor.isZero() ||
+    else if ((!node->context.votedFor ||
               node->context.votedFor == request.candidate) &&
              isLogCurrent(request.lastLogIndex, request.lastLogTerm)) {
         reply.voteGranted = true;
@@ -326,7 +338,7 @@ void RaftMessageHandler::onRequestVote(const Address& from, istringstream& ss)
     election->reset(par->getCurrtime());
 }
 
-void RaftMessageHandler::onReply(const Address&from, const HeaderOnlyMessage& header, istringstream& ss)
+void RaftMessageHandler::onReply(const Address&from, const HeaderOnlyMessage& header, istringstream& is)
 {
     auto trans = findTransaction(header.transId);
     if (!trans)
@@ -335,29 +347,7 @@ void RaftMessageHandler::onReply(const Address&from, const HeaderOnlyMessage& he
     if (trans->onReceived == nullptr)
         return;     // no callback, nothing to do
 
-    // Load the message
-    shared_ptr<Message> message;
-    switch (header.msgtype) {
-        case APPEND_ENTRIES_REPLY:
-            {
-                auto reply = make_shared<AppendEntriesReply>();
-                reply->load(ss);
-                message = reply;
-            }
-            break;
-        case REQUEST_VOTE_REPLY:
-            {
-                auto reply = make_shared<RequestVoteReply>();
-                reply->load(ss);
-                message = reply;
-            }
-            break;
-        default:
-            throw NYIException("reply handler", __FILE__, __LINE__);
-            break;
-    }
-
-    auto result = trans->onReceived(trans.get(), message);
+    auto result = trans->onReceived(trans.get(), is);
     if (result == Transaction::RESULT::DELETE)
         transactions.erase(header.transId);
 }
@@ -392,7 +382,7 @@ void RaftMessageHandler::onAddServerCommand(shared_ptr<CommandMessage> command, 
         reply = command->makeReply(false);
 
         // Send back what we think is the leader
-        reply->address = node->context.leaderAddress;
+        reply->address = node->context.currentLeader;
     }
     else {
         reply = command->makeReply(true);
@@ -416,7 +406,7 @@ void RaftMessageHandler::onRemoveServerCommand(shared_ptr<CommandMessage> comman
         reply = command->makeReply(false);
 
         // Send back what we think is the leader
-        reply->address = node->context.leaderAddress;
+        reply->address = node->context.currentLeader;
     }
     else {
         reply = command->makeReply(true);
@@ -483,6 +473,7 @@ void RaftMessageHandler::applyLogEntry(Command command,
 
     switch(command) {
         case CMD_NONE:
+        case CMD_NOOP:
             // Dummy command, just ignore
             break;
         case CMD_ADD_SERVER:
@@ -498,6 +489,13 @@ void RaftMessageHandler::applyLogEntry(Command command,
         default:
             throw NetworkException("Unknown log entry command!");
             break;
+    }
+}
+
+void RaftMessageHandler::applyLogEntries(const vector<RaftLogEntry> &entries)
+{
+    for (const auto & elem : entries) {
+        this->applyLogEntry(elem);
     }
 }
 
@@ -573,7 +571,7 @@ Transaction::RESULT RaftMessageHandler::onElectionTimeout(Transaction *trans)
         // seen either for a while
         //
         // Can't start an election if there are no members
-        if (node->context.votedFor.isZero() &&
+        if (!node->context.votedFor &&
             !node->member.memberList.empty()) {
             // Election timeout!
             node->context.currentState = State::CANDIDATE;
@@ -584,7 +582,7 @@ Transaction::RESULT RaftMessageHandler::onElectionTimeout(Transaction *trans)
         // Check our vote totals
         if ((trans->total > 0) && (2*trans->successes > trans->total)) {
             // majority vote, we have become the leader
-            node->context.leaderAddress = connection()->address();
+            node->context.currentLeader = connection()->address();
             node->context.currentState = State::LEADER;
 
             // Turn off the election processing
@@ -595,7 +593,7 @@ Transaction::RESULT RaftMessageHandler::onElectionTimeout(Transaction *trans)
             message.transId = getNextMessageId();
             message.term = node->context.currentTerm;
             message.leaderAddress = connection()->address();
-            message.prevLogIndex = node->context.logEntries.size()-1;
+            message.prevLogIndex = static_cast<int>(node->context.logEntries.size()-1);
             message.prevLogTerm = node->context.logEntries[message.prevLogIndex].termReceived;
             message.leaderCommit = node->context.commitIndex;
             

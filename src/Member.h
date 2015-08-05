@@ -59,6 +59,7 @@ public:
 
     void addToMemberList(const Address &address, int timestamp, long heartbeat);
     void removeFromMemberList(const Address &address);
+    bool isMember(const Address& address);
 };
 
 

@@ -80,9 +80,10 @@ raft: 	RaftApp.o \
 	g++ -o Application RaftApp.o Log.o Util.o SimNetwork.o Params.o NetworkNode.o Raft.o MP2.o jsoncpp.o Context.o Member.o Ring.o Command.o ${CFLAGS}
 
 test: TestMain.o \
+		TestContext.o \
 		TestNetwork.o \
-		TestSimNetwork.o \
 		TestRaft.o \
+		TestSimNetwork.o \
 		MockNetwork.o \
 		Command.o \
 		Context.o \
@@ -95,7 +96,7 @@ test: TestMain.o \
 		SimNetwork.o \
 		Util.o \
 		jsoncpp.o
-	g++ -o test TestMain.o TestNetwork.o TestSimNetwork.o TestRaft.o MockNetwork.o Command.o Context.o NetworkNode.o Member.o Log.o SimNetwork.o Raft.o Util.o Params.o Ring.o jsoncpp.o
+	g++ -o test TestMain.o TestContext.o TestNetwork.o TestSimNetwork.o TestRaft.o MockNetwork.o Command.o Context.o NetworkNode.o Member.o Log.o SimNetwork.o Raft.o Util.o Params.o Ring.o jsoncpp.o
 
 Log.o: Log.cpp \
 		Log.h \
@@ -124,26 +125,6 @@ SocketNetwork.o: SocketNetwork.cpp \
 
 Util.o: Util.cpp Util.h Network.h
 	g++ -c Util.cpp ${CFLAGS}
-
-TestMain.o: TestMain.cpp
-	g++ -c TestMain.cpp ${CFLAGS}
-
-TestSimNetwork.o: TestSimNetwork.cpp
-	g++ -c TestSimNetwork.cpp ${CFLAGS}
-
-TestNetwork.o: TestNetwork.cpp \
-		Network.h \
-		SimNetwork.h \
-		Params.h
-	g++ -c TestNetwork.cpp ${CFLAGS}
-
-TestRaft.o: TestRaft.cpp \
-		Context.h \
-		Network.h \
-		Raft.h \
-		MockNetwork.h \
-		Params.h
-	g++ -c TestRaft.cpp ${CFLAGS}
 
 MockNetwork.o: MockNetwork.cpp \
 		MockNetwork.h \
@@ -284,6 +265,34 @@ Command.o: Command.cpp \
 		Ring.h \
 		stdincludes.h
 	g++ -c Command.cpp ${CFLAGS}
+
+TestContext.o: TestContext.cpp \
+		Context.h \
+		Network.h \
+		Raft.h \
+		MockNetwork.h \
+		Params.h
+	g++ -c TestContext.cpp ${CFLAGS}
+
+TestMain.o: TestMain.cpp
+	g++ -c TestMain.cpp ${CFLAGS}
+
+TestRaft.o: TestRaft.cpp \
+		Context.h \
+		Network.h \
+		Raft.h \
+		MockNetwork.h \
+		Params.h
+	g++ -c TestRaft.cpp ${CFLAGS}
+
+TestSimNetwork.o: TestSimNetwork.cpp
+	g++ -c TestSimNetwork.cpp ${CFLAGS}
+
+TestNetwork.o: TestNetwork.cpp \
+		Network.h \
+		SimNetwork.h \
+		Params.h
+	g++ -c TestNetwork.cpp ${CFLAGS}
 
 clean:
 	rm -rf *.o Application dbg.log msgcount.log stats.log machine.log

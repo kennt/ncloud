@@ -47,5 +47,12 @@ using namespace std;
 #define STDCLLBKARGS (void *env, char *data, int size)
 #define STDCLLBKRET	void
 #define DEBUGLOG 1
+
+#ifdef DEBUG
+#define DEBUG_ 1
+#else
+#define DEBUG_ 0
+#endif
+
 		
 #endif	/* NCLOUD_STDINCLUDES_H_ */

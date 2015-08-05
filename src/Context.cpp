@@ -67,13 +67,13 @@ void Context::init(RaftMessageHandler *handler,
     this->commitIndex = 0;
     this->lastAppliedIndex = 0;
 
-    this->leaderAddress.clear();
+    this->currentLeader.clear();
     this->currentTerm = 0;
     this->votedFor.clear();
     this->followers.clear();
 
     this->logEntries.clear();
-    this->logEntries.emplace_back();
+    this->logEntries.emplace_back(); // add dummy first entry
 
     // Reload the persisted state
     this->loadFromStore();
@@ -93,12 +93,12 @@ void Context::loadFromStore()
 
     Json::Value root = store->read();
 
-    // Read in leaderAddress, currentTerm, votedForAddress
+    // Read in currentLeader, currentTerm, votedForAddress
     // and log entries
     unsigned short port;
     port = root.get("leaderPort", 0).asInt();
-    this->leaderAddress.parse(
-        root.get("leaderAddress", "0.0.0.0").asString().c_str(), port);
+    this->currentLeader.parse(
+        root.get("currentLeader", "0.0.0.0").asString().c_str(), port);
 
     this->currentTerm = root.get("currentTerm", 0).asInt();
 
@@ -106,6 +106,7 @@ void Context::loadFromStore()
     this->votedFor.parse(
         root.get("votedFor", "0.0.0.0").asString().c_str(), port);
 
+    this->logEntries.clear();   // reset the log
     Json::Value log = root["log"];
     for (int i=0; i<log.size(); i++) {
         RaftLogEntry    entry;
@@ -116,14 +117,12 @@ void Context::loadFromStore()
             static_cast<unsigned short>(log[i].get("port", 0).asInt()));
 
         this->logEntries.push_back(entry);
-
-        // Perform this action on the list of members
-        handler->applyLogEntry(entry);
     }
 
     // apply the log entries
     // Update the context
-    this->lastAppliedIndex = log.size() - 1;
+    handler->applyLogEntries(this->logEntries);
+    this->lastAppliedIndex = static_cast<int>(this->logEntries.size() - 1);
 }
 
 // Persists the context to the ContextStore, then
@@ -135,7 +134,7 @@ void Context::saveToStore()
 
     Json::Value root;
 
-    root["leaderAddress"] = this->leaderAddress.toString();
+    root["currentLeader"] = this->currentLeader.toString();
     root["currentTerm"] = this->currentTerm;
     root["votedFor"] = this->votedFor.toString();
 
@@ -144,15 +143,13 @@ void Context::saveToStore()
         Json::Value logEntry;
         logEntry["term"] = entry.termReceived;
         logEntry["command"] = static_cast<int>(entry.command);
-        logEntry["address"] = entry.address.toString();
+        logEntry["address"] = entry.address.toAddressString();
+        logEntry["port"] = entry.address.getPort();
         log.append(logEntry);
     }
     root["log"] = log;
 
     store->write(root);
-
-    // Update the context
-    this->commitIndex = static_cast<int>(this->logEntries.size() - 1);
 }
 
 // Adds a member to the membership list.  This will also
@@ -191,13 +188,7 @@ void Context::removeMember(const Address& address)
 
 void Context::onTimeout()
 {
-    if (this->commitIndex > this->lastAppliedIndex) {
-        for (int i=this->lastAppliedIndex; i<=this->commitIndex; i++) {
-            // Apply log entries to match
-            this->handler->applyLogEntry(this->logEntries[i]);
-        }
-        this->lastAppliedIndex = this->commitIndex;
-    }
+    this->applyCommittedEntries();
 }
 
 void Context::startElection(const MemberInfo& member, Raft::Transaction *trans)
@@ -232,3 +223,122 @@ void Context::startElection(const MemberInfo& member, Raft::Transaction *trans)
     this->handler->broadcast(&request);
 }
 
+void Context::addEntries(int startIndex, vector<RaftLogEntry> & entries)
+{
+    // At most we are appending all new entries
+    if (startIndex < 0 || startIndex > this->logEntries.size()) {
+        throw AppException("Context log index out-of-range");
+    }
+
+    bool    rebuild = false;
+    int     index = 0;
+
+    if (startIndex < this->logEntries.size()) {
+        // If are possibly removing entries, need to rebuild
+        // the state machine from scratch (or we could reverse
+        // the entries but need to check that we don't delete
+        // entries that weren't added, etc....).
+        //
+        // This is only true for log entries that deal with
+        // cluster membership.
+
+        // Look for entries that are in conflict
+        for (int index=0; index<entries.size(); index++) {
+            // Stop if we go past the log size
+            if (startIndex+index >= this->logEntries.size()-1)
+                break;
+
+            if (entries[index].termReceived != this->logEntries[startIndex+index].termReceived) {
+                // This location is different!
+                // Delete this and all succeeding entries from the log
+
+                // Do a sanity check to see that the log is not doing
+                // weird things (like removing servers that haven't been
+                // added or adding servers twice).
+                if (DEBUG_) {
+                    SanityTestLog     test;
+                    test.validateLogEntries(this->logEntries, 0, startIndex+index);
+                    test.validateLogEntries(entries, index, entries.size()-index);
+                }
+                this->logEntries.resize(startIndex+index);
+
+                // force rebuilding of the memberlist
+                rebuild = true;
+                break;
+            }
+        }
+    }
+
+    if (rebuild) {
+        this->handler->applyLogEntries(this->logEntries);
+        this->lastAppliedIndex = static_cast<int>(this->logEntries.size() - 1);
+    }
+
+    // Append on all other entries
+    for (; index < entries.size(); index++) {
+        this->logEntries.push_back(entries[index]);
+
+        // we are using Raft for group membership
+        // apply this entry to the state machine witout
+        // waiting for commit
+        this->handler->applyLogEntry(entries[index]);
+        this->lastAppliedIndex++;
+    }
+
+    if (DEBUG_) {
+        SanityTestLog test;
+        test.validateLogEntries(this->logEntries, 0, this->lastAppliedIndex+1);
+    }
+}
+
+void Context::applyCommittedEntries()
+{
+    if (this->commitIndex > this->lastAppliedIndex) {
+        for (int i=this->lastAppliedIndex; i<=this->commitIndex; i++) {
+            // Apply log entries to match
+            this->handler->applyLogEntry(this->logEntries[i]);
+        }
+        this->lastAppliedIndex = this->commitIndex;
+    }
+}
+
+void SanityTestLog::validateLogEntries(const vector<RaftLogEntry>& entries,
+                                       int start, int count)
+{
+    int     term = -1;
+
+    for (int i=0; i<count; i++) {
+        auto & entry = entries[start+i];
+
+        // terms are non-decreasing
+        if (entry.termReceived < term)
+            throw AppException("");
+        term = entry.termReceived;
+
+        switch(entry.command) {
+            case CMD_NOOP:
+                break;
+            case CMD_ADD_SERVER:
+                {
+                    // Check to see that the server is not already
+                    // in the list of members
+                    if (servers.count(entry.address) != 0)
+                        throw AppException("");
+                    servers.insert(entry.address);
+                }
+                break;
+            case CMD_REMOVE_SERVER:
+                {
+                    // Check to see that the server IS in the list
+                    // of servers
+                    if (servers.count(entry.address) == 0)
+                        throw AppException("");
+                    servers.erase(entry.address);
+                }
+                break;
+            default:
+                throw AppException("");
+                break;
+        }
+    }
+}

@@ -88,7 +88,11 @@ struct RaftLogEntry {
     // This is the address being operated on (either added or deleted).
     Address     address;
 
-    RaftLogEntry() : termReceived(0), command(Command::CMD_NONE)
+    RaftLogEntry() : termReceived(0), command(Command::CMD_NOOP)
+    {}
+
+    RaftLogEntry(int term, Raft::Command command, const Address& addr)
+        : termReceived(term), command(command), address(addr)
     {}
 
     // Used for load/save for messages
@@ -241,7 +245,7 @@ struct Context
     // (Updated on stable storage before responding to RPCs)
     // ==================
     // Current leader address
-    Address     leaderAddress;
+    Address     currentLeader;
 
     // The latest term that this server has seen (initialized to 0 on
     // first boot, increases monotonically).
@@ -291,7 +295,35 @@ struct Context
     void onTimeout();
 
     void startElection(const MemberInfo& member, Raft::Transaction *trans);
+
+    // Add new entries to the log, if an old entry conflicts they will
+    // remove the conflict and all succeeding entries. Appends new
+    // entries to the log after that.
+    void addEntries(int startIndex, vector<RaftLogEntry> & entries);
+
+    // Applies committed but not-yet-applied entries
+    void applyCommittedEntries();
 };
+
+
+// Use this class to test the validity of a set of RaftLogEntry
+// operations.  This checks to for invalid states: thus you can't
+// remove a server that's not there or add a server twice (without
+// having removed it).
+class SanityTestLog
+{
+public:
+    vector<RaftLogEntry>    entries;
+    set<Address>    servers;
+
+    // Performs basically the following:
+    // for (int i=0; i<count; i++)
+    //      validate entries[start+i]
+    //
+    void validateLogEntries(const vector<RaftLogEntry> &entries,
+                            int start, int count);
+};
+
 
 }
 

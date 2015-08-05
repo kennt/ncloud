@@ -101,6 +101,9 @@ public:
     Address     leaderAddress;
 
     // index of log entry immediately preceding new ones
+    // Thus we are overwriting/appending
+    //  for (int i=0; i<entries.size(); i++)
+    //      log[prevLogIndex+1+i] = entries[i]
     int         prevLogIndex;
 
     // term of prevLogIndex entry
@@ -113,7 +116,8 @@ public:
     // leader's commit index
     int         leaderCommit;
 
-    AppendEntriesMessage() : Message(APPEND_ENTRIES), prevLogIndex(0), prevLogTerm(0), leaderCommit(0)
+    AppendEntriesMessage() : Message(APPEND_ENTRIES),
+        prevLogIndex(0), prevLogTerm(0), leaderCommit(0)
     {}
 
     virtual void load(istringstream& ss) override;
@@ -225,9 +229,13 @@ struct Transaction
     vector<Address> recipients;
 
     // Used for calculating majority voting
+    // Setting total to 0 disables election tracking
+    // (and preventing the node from moving from candidate to leader)
     int         total;
     int         successes;
     int         failures;
+    void        cancelElection()
+        { total = 0; }
 
     weak_ptr<NetworkNode>   netnode;
 
@@ -236,9 +244,9 @@ struct Transaction
         timeStart(-1), timeout(0), nTimeouts(1),
         total(0), successes(0), failures(0),
         netnode(node)
-        {
-            timeStart = par->getCurrtime();
-        }
+    {
+        timeStart = par->getCurrtime();
+    }
 
     // Starts the timeout handling
     void start(int start, int interval)
@@ -260,7 +268,7 @@ struct Transaction
     // Returns RESULT::DELETE to remove this transaction
     // Returns RESULT::KEEP otherwise
     std::function<RESULT (Transaction *thisTrans)>   onTimeout;
-    std::function<RESULT (Transaction *thisTrans, shared_ptr<Message>)>   onReceived;
+    std::function<RESULT (Transaction *thisTrans, istringstream& is)>   onReceived;
 };
 
 
@@ -337,6 +345,7 @@ public:
     // change to the "state machine"
     void applyLogEntry(Command command, const Address& address);
     void applyLogEntry(const RaftLogEntry& entry);
+    void applyLogEntries(const vector<RaftLogEntry>& entries);
 
     // Returns true if the log is up-to-date
     // i.e. the last entry of the log is equal to term

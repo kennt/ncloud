@@ -32,7 +32,8 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
 
     // Connection and address for a dummy leader node
     Address     leaderAddr(0x64656667, 9000); // 100.101.102.103:9000
-    auto leaderConn = network->create(leaderAddr);
+    auto leaderconn = network->create(leaderAddr);
+    auto mockleaderconn = network->findMockConnection(leaderAddr);
 
     // Setup the timeouts
     par->electionTimeout = 10;
@@ -41,6 +42,9 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
 
     // Startup (as a leader)
     SECTION("simple startup as a leader") {
+        // This is the cluster startup model. This is the first
+        // node that will startup, thus it will create a log and
+        // start up as a candidate.
         Raft::MemoryBasedContextStore store(par);
 
         par->resetCurrtime();
@@ -52,64 +56,59 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
                                  conn,
                                  rafthandler);
 
-        // Node will start up as a follower, but follows
+        // Node will start up as a candidate, but follows
         // a special codepath where it will initialize the
         // log.
         netnode->nodeStart(myAddr, 10);
 
-        REQUIRE(netnode->context.currentState == Raft::State::FOLLOWER);
-
-        // Should be no changes in the membership list since
-        // there is no leader yet, we are still a follower.
+        REQUIRE(netnode->context.currentState == Raft::State::CANDIDATE);
         REQUIRE(netnode->member.inited == true);
-        REQUIRE(netnode->member.inGroup == false);
-        REQUIRE(netnode->member.memberList.size() == 0);
+        REQUIRE(netnode->member.inGroup == true);
+        REQUIRE(netnode->member.memberList.size() == 1);
+        REQUIRE(netnode->member.isMember(myAddr));
 
-        int term = netnode->context.currentTerm;
+        // Since this became a candidate
+        // (check for incremented term)
+        REQUIRE(netnode->context.currentTerm == 1);
+        // (check for vote for self)
+        REQUIRE(myAddr == netnode->context.votedFor);
+        // Should still be no leader
+        REQUIRE(!netnode->context.currentLeader);
+        // (check for RPCs), should be none since only one node
+        REQUIRE(mockconn->messagesSent == 0);
 
-        // After it timesout, should transition to a candidate
-        // then transition to a leader (since there is only one
-        // node).
-        //
+        //$ TODO: check the log
+        REQUIRE(store.entries.size() == 1);
+        // Size is 2 because there is always one empty element
+        REQUIRE(store.current["log"].size() == 2);
+        REQUIRE(store.current["log"][0]["command"].asInt() == static_cast<int>(Raft::Command::CMD_NOOP));
+        REQUIRE(store.current["log"][1]["address"].asString() == myAddr.toAddressString());
+        REQUIRE(store.current["log"][1]["port"].asInt() == myAddr.getPort());
+        REQUIRE(store.current["log"][1]["command"].asInt() == static_cast<int>(Raft::Command::CMD_ADD_SERVER));
+
+        // After timeout, it should check the results which would
+        // indicate an election success.
+        // Note that the check occurs on election timeout (we would
+        // check during receiving a vote, but there are no other nodes,
+        // thus no other votes).
         par->addToCurrtime(par->electionTimeout);
         netnode->receiveMessages();
         netnode->processQueuedMessages();
 
-        REQUIRE(netnode->context.currentState == Raft::State::CANDIDATE);
-
-        // Since this became a candidate
-        // (check for incremented term)
-        REQUIRE((term+1) == netnode->context.currentTerm);
-        // (check for vote for self)
-        REQUIRE(myAddr == netnode->context.votedFor);
-        // (check for RPCs), should be none since only one node
-        REQUIRE(mockconn->messagesSent == 0);
-        // Should still be no leader
-        REQUIRE(netnode->context.leaderAddress.isZero());
-
-        // On the next timeout, check for majority of votes (should have
-        // it, since this is the only node).
-        par->addToCurrtime(1);
-        netnode->receiveMessages();
-        netnode->processQueuedMessages();
-
-        REQUIRE(netnode->context.currentState == Raft::State::LEADER);
-
-
         // Election won, should be a leader      
+        REQUIRE(netnode->context.currentState == Raft::State::LEADER);
+        REQUIRE(netnode->context.currentLeader == myAddr);
 
         // Send a query to see who is the leader?  
 
         // What is the expected log state?
-        // Check the log, there should be a single entry for adding itself
-        // (Also no messages are sent out beause there are no other nodes)
+        // The log should not have changed.
+        REQUIRE(store.entries.size() == 1);
+        REQUIRE(store.current["log"].size() == 2);
     }
 
-    // Startup of a follower, which transitions to a candidate
-    // but is then contacted by a leader
+    // Startup of a follower, which is then contacted by a leader
     SECTION("startup->follower->candidate then joins a group") {
-        Address     bogusAddr(0x64656667, 9000); // 100.101.102.103:9000
-
         Raft::MemoryBasedContextStore store(par);
 
         par->resetCurrtime();
@@ -122,32 +121,66 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
                                  conn,
                                  rafthandler);
 
-        // According to our protocol, pass it it's own address, this should
-        // start it up as the leader.
-        netnode->nodeStart(bogusAddr, 10);
+        // According to our protocol, pass in a null address
+        netnode->nodeStart(Address(), 10);
 
-        // Check the state
+        // Check the startup state
+        int term = netnode->context.currentTerm;
+        REQUIRE(netnode->context.currentTerm == 0);
+        REQUIRE(netnode->context.currentState == State::FOLLOWER);
+
         // Run through a single loop.
+        par->addToCurrtime(1);
         netnode->receiveMessages();
         netnode->processQueuedMessages();
 
-        // Wait for some time, it should transition to a candidate
-        par->addToCurrtime(par->electionTimeout);
+        REQUIRE(netnode->context.currentState == Raft::State::FOLLOWER);
+        REQUIRE(mockconn->messagesSent == 0);
+
+        // Have the leader "contact" the node via an append entries RPC.
+        AppendEntriesMessage    message;
+        message.transId = 1;
+        message.term = 1;
+        message.leaderAddress = leaderAddr;
+        message.prevLogIndex = 1;
+        message.prevLogTerm = 0;
+        message.leaderCommit = 1;
+        auto raw = message.toRawMessage(leaderAddr, myAddr);
+        leaderconn->send(raw.get());
+
+        par->addToCurrtime(1);
         netnode->receiveMessages();
         netnode->processQueuedMessages();
 
-        REQUIRE(netnode->context.currentState == Raft::State::CANDIDATE);
+        // It should still be a follower, but it should be following
+        // the leader
+        REQUIRE(netnode->context.currentState == Raft::State::FOLLOWER);
+        REQUIRE(netnode->context.currentLeader == leaderAddr);
+        REQUIRE(netnode->context.currentTerm == 1);
+        REQUIRE(mockconn->messagesSent == 1);
 
-        // Send it a heartbeat (appendEntries RPC). It should transition
-        // to a FOLLOWER
-        //$ TODO: add this
+        // Pull the message off of the connection and check it
+        auto recvMessage = leaderconn->recv(0);
+        REQUIRE(recvMessage);
+
+        // Should be an AppendEntriesReply
+        AppendEntriesReply reply;
+        istringstream ss(std::string((const char *)recvMessage->data.get(),
+                                     recvMessage->size));
+        reply.load(ss);
+
+        // The logs don't match up, should get a false reply
+        REQUIRE(reply.success == false);
+        REQUIRE(reply.term == 1);
     }
+}
 
-    // Startup of a follower, which transitions to a candidate,
-    // then to a leader.  But is then contacted by another leader.
-    SECTION("startup->follower->candidate->leader then joins a group") {
-    }
-
+// Test cases for log operations
+TEST_CASE("Raft log ops", "[raft][log]")
+{
+    // Test that the log gets updated correctly
+    // Test for multiple updates
+    // Test for maximum time allowed
 }
 
 // Test cases for various election scenarios
