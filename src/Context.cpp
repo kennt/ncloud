@@ -243,9 +243,9 @@ void Context::addEntries(int startIndex, vector<RaftLogEntry> & entries)
         // cluster membership.
 
         // Look for entries that are in conflict
-        for (int index=0; index<entries.size(); index++) {
+        for (index=0; index<entries.size(); index++) {
             // Stop if we go past the log size
-            if (startIndex+index >= this->logEntries.size()-1)
+            if (startIndex+index > this->logEntries.size()-1)
                 break;
 
             if (entries[index].termReceived != this->logEntries[startIndex+index].termReceived) {
@@ -258,7 +258,7 @@ void Context::addEntries(int startIndex, vector<RaftLogEntry> & entries)
                 if (DEBUG_) {
                     SanityTestLog     test;
                     test.validateLogEntries(this->logEntries, 0, startIndex+index);
-                    test.validateLogEntries(entries, index, entries.size()-index);
+                    test.validateLogEntries(entries, index, static_cast<int>(entries.size()-index));
                 }
                 this->logEntries.resize(startIndex+index);
 
@@ -270,6 +270,7 @@ void Context::addEntries(int startIndex, vector<RaftLogEntry> & entries)
     }
 
     if (rebuild) {
+        this->handler->applyLogEntry(CMD_CLEAR_LIST, Address());
         this->handler->applyLogEntries(this->logEntries);
         this->lastAppliedIndex = static_cast<int>(this->logEntries.size() - 1);
     }
@@ -305,15 +306,13 @@ void Context::applyCommittedEntries()
 void SanityTestLog::validateLogEntries(const vector<RaftLogEntry>& entries,
                                        int start, int count)
 {
-    int     term = -1;
-
     for (int i=0; i<count; i++) {
         auto & entry = entries[start+i];
 
         // terms are non-decreasing
-        if (entry.termReceived < term)
-            throw AppException("");
-        term = entry.termReceived;
+        if (entry.termReceived < lastTermSeen)
+            throw AppException("term not in increasing order");
+        lastTermSeen = entry.termReceived;
 
         switch(entry.command) {
             case CMD_NOOP:
@@ -323,7 +322,7 @@ void SanityTestLog::validateLogEntries(const vector<RaftLogEntry>& entries,
                     // Check to see that the server is not already
                     // in the list of members
                     if (servers.count(entry.address) != 0)
-                        throw AppException("");
+                        throw AppException("address already in member list");
                     servers.insert(entry.address);
                 }
                 break;
@@ -332,12 +331,12 @@ void SanityTestLog::validateLogEntries(const vector<RaftLogEntry>& entries,
                     // Check to see that the server IS in the list
                     // of servers
                     if (servers.count(entry.address) == 0)
-                        throw AppException("");
+                        throw AppException("address not found in member list");
                     servers.erase(entry.address);
                 }
                 break;
             default:
-                throw AppException("");
+                throw AppException("unknown command");
                 break;
         }
     }

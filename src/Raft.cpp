@@ -486,6 +486,9 @@ void RaftMessageHandler::applyLogEntry(Command command,
             node->member.removeFromMemberList(
                 address);
             break;
+        case CMD_CLEAR_LIST:
+            node->member.memberList.clear();
+            break;
         default:
             throw NetworkException("Unknown log entry command!");
             break;

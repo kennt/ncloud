@@ -57,7 +57,12 @@ enum Command {
     CMD_NONE = 0,       // This should not appear in the log
     CMD_NOOP,
     CMD_ADD_SERVER,
-    CMD_REMOVE_SERVER
+    CMD_REMOVE_SERVER,
+
+    //$ HACK: THis is a special command that is used for
+    // clearing the membership list.  Only intended for
+    // use by the Context class.
+    CMD_CLEAR_LIST = 1000
 };
 
 
@@ -315,6 +320,9 @@ class SanityTestLog
 public:
     vector<RaftLogEntry>    entries;
     set<Address>    servers;
+    int             lastTermSeen;
+
+    SanityTestLog() : lastTermSeen(-1) {}
 
     // Performs basically the following:
     // for (int i=0; i<count; i++)

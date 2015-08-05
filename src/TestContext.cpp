@@ -74,13 +74,14 @@ TEST_CASE("Context", "[context]")
 
     // Test Member APIs
     // Test RaftLogEntry APIs
-    SECTION("initialization") {
+    SECTION("addEntries") {
         Raft::MemoryBasedContextStore store(par);
         auto rafthandler = make_shared<Raft::RaftMessageHandler>(nullptr, par, &store, netnode, conn);        
 
         par->resetCurrtime();
         network->reset();
 
+        netnode->member.memberList.clear();
         netnode->context.init(rafthandler.get(), &store);
 
         REQUIRE(netnode->context.logEntries.size() == 1);
@@ -88,13 +89,78 @@ TEST_CASE("Context", "[context]")
         vector<RaftLogEntry>    newEntries;
         Address addr1(0x64656667, 8000); // 100.101.102.103:8000
         Address addr2(0x64656667, 8001); // 100.101.102.103:8001
+        Address addr3(0x64656667, 8002); // 100.101.102.103:8002
+        Address addr4(0x64656667, 8003); // 100.101.102.103:8003
+
         newEntries.emplace_back(1, Command::CMD_ADD_SERVER, addr1);
         newEntries.emplace_back(1, Command::CMD_REMOVE_SERVER, addr1);
         newEntries.emplace_back(1, Command::CMD_ADD_SERVER, addr2);
 
+        vector<RaftLogEntry>    newEntries2;
+        newEntries2.emplace_back(2, Command::CMD_REMOVE_SERVER, addr2);
+        newEntries2.emplace_back(2, Command::CMD_ADD_SERVER, addr2);
+
+        vector<RaftLogEntry>    newEntries3;
+        newEntries3.emplace_back(2, Command::CMD_ADD_SERVER, addr3);
+        newEntries3.emplace_back(2, Command::CMD_ADD_SERVER, addr4);
+
         // Invalid index values
+        netnode->member.memberList.clear();
+        netnode->context.init(rafthandler.get(), &store);
         REQUIRE_THROWS(netnode->context.addEntries(-1, newEntries));
         REQUIRE_THROWS(netnode->context.addEntries(2, newEntries));
         REQUIRE_THROWS(netnode->context.addEntries(1000, newEntries));
+
+        // normal ops
+        netnode->member.memberList.clear();
+        netnode->context.init(rafthandler.get(), &store);
+        netnode->context.addEntries(1, newEntries);
+        REQUIRE(netnode->context.logEntries.size() == 4);
+        REQUIRE(netnode->member.memberList.size() == 1);
+        REQUIRE(netnode->member.memberList.front().address == addr2);
+
+        // should overwrite with no change
+        netnode->member.memberList.clear();
+        netnode->context.init(rafthandler.get(), &store);
+        netnode->context.addEntries(1, newEntries);
+        netnode->context.addEntries(1, newEntries);
+        REQUIRE(netnode->context.logEntries.size() == 4);
+        REQUIRE(netnode->member.memberList.size() == 1);
+        REQUIRE(netnode->member.memberList.front().address == addr2);
+
+        // Check overwriting
+        netnode->member.memberList.clear();
+        netnode->context.init(rafthandler.get(), &store);
+        netnode->context.addEntries(1, newEntries);
+        REQUIRE(netnode->member.memberList.size() == 1);
+        netnode->context.addEntries(3, newEntries3);
+        REQUIRE(netnode->member.memberList.size() == 2);
+        netnode->context.addEntries(2, newEntries3);
+        REQUIRE(netnode->member.memberList.size() == 3);
+
+        // addition of same address twice
+        if (DEBUG_) {
+            netnode->member.memberList.clear();
+            netnode->context.init(rafthandler.get(), &store);
+            netnode->context.addEntries(1, newEntries);
+            REQUIRE_THROWS(netnode->context.addEntries(2, newEntries));
+        }
+
+        // Test remove of non-existent node
+        if (DEBUG_) {
+            netnode->member.memberList.clear();
+            netnode->context.init(rafthandler.get(), &store);
+            REQUIRE_THROWS(netnode->context.addEntries(1, newEntries2));
+        }
+
+        // Term mismatch
+        if (DEBUG_) {
+            netnode->member.memberList.clear();
+            netnode->context.init(rafthandler.get(), &store);
+            netnode->context.addEntries(1, newEntries);
+            netnode->context.addEntries(4, newEntries2);
+            REQUIRE_THROWS(netnode->context.addEntries(6, newEntries));
+        }
+
     }
 }
