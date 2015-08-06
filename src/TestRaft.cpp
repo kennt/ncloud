@@ -178,8 +178,59 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
 // Test cases for log operations
 TEST_CASE("Raft log ops", "[raft][log]")
 {
-    // Test that the log gets updated correctly
+    string  name("mockleader");
+    // Basic startup test case
+    // Create a mock test network
+    Params *    par = new Params();
+    Address     myAddr(0x64656667, 8080); // 100.101.102.103:8080
+    auto network = MockNetwork::createNetwork(par);
+    auto conn = network->create(myAddr);
+    auto mockconn = network->findMockConnection(myAddr);
+
+    // Connection and address for a dummy leader node
+    Address     leaderAddr(0x64656667, 9000); // 100.101.102.103:9000
+    auto leaderconn = network->create(leaderAddr);
+    auto mockleaderconn = network->findMockConnection(leaderAddr);
+
+    // Setup the timeouts
+    par->electionTimeout = 10;
+    par->idleTimeout = 5;   // not used by the mock network
+    par->rpcTimeout = 5;
+
+    // Test that the leader sends the correct log update
+    // (update of a single log entry)
+    SECTION("leader - update of a single log entry") {
+        Raft::MemoryBasedContextStore store(par);
+
+        par->resetCurrtime();
+        network->reset();
+
+        // Startup the leader
+        auto netnode = make_shared<NetworkNode>(name, nullptr, par, network);
+        auto rafthandler = make_shared<Raft::RaftMessageHandler>(nullptr, par, &store, netnode, conn);
+        netnode->registerHandler(ConnectType::MEMBER,
+                                 conn,
+                                 rafthandler);
+        netnode->nodeStart(myAddr, 10);
+
+        // Run through the election timeout
+        par->addToCurrtime(par->electionTimeout);
+        netnode->receiveMessages();
+        netnode->processQueuedMessages();
+        REQUIRE(netnode->context.currentState == Raft::State::LEADER);
+
+        // Ok, Add a follower node
+        // Have the server send the follower a log update  
+    }
+
+    // Test that a follower receives and applies the
+    // correct log update (single log entry)
+    SECTION("follower - update of a single log entry") {
+    }
+
     // Test for multiple updates
+    // (multiple log entry update)
+
     // Test for maximum time allowed
 }
 
@@ -212,4 +263,69 @@ TEST_CASE("Raft multi-node startup", "[raft][full]") {
     // Startup three nodes and have them communicate with each other
     // One will be picked as the leader
 }
+
+// Test AddServer
+TEST_CASE("AddServer test cases", "[raft][AddServer]") {
+    string  name("mockleader");
+    // Basic startup test case
+    // Create a mock test network
+    Params *    par = new Params();
+    Address     myAddr(0x64656667, 8080); // 100.101.102.103:8080
+    auto network = MockNetwork::createNetwork(par);
+    auto conn = network->create(myAddr);
+    auto mockconn = network->findMockConnection(myAddr);
+
+    // Connection and address for a dummy leader node
+    Address     leaderAddr(0x64656667, 9000); // 100.101.102.103:9000
+    auto leaderconn = network->create(leaderAddr);
+    auto mockleaderconn = network->findMockConnection(leaderAddr);
+
+    // Setup the timeouts
+    par->electionTimeout = 10;
+    par->idleTimeout = 5;   // not used by the mock network
+    par->rpcTimeout = 5;
+
+    SECTION("Basic AddServer functionality") {
+        // Startup a leader
+        Raft::MemoryBasedContextStore store(par);
+
+        par->resetCurrtime();
+        network->reset();
+
+        // Startup the leader
+        auto netnode = make_shared<NetworkNode>(name, nullptr, par, network);
+        auto rafthandler = make_shared<Raft::RaftMessageHandler>(nullptr, par, 
+                                &store, netnode, leaderconn);
+        netnode->registerHandler(ConnectType::MEMBER,
+                                 leaderconn,
+                                 rafthandler);
+        netnode->nodeStart(leaderAddr, 10);
+
+        // Run through the election timeout
+        par->addToCurrtime(par->electionTimeout);
+        netnode->receiveMessages();
+        netnode->processQueuedMessages();
+        REQUIRE(netnode->context.currentState == Raft::State::LEADER);
+
+        // Call through the onAddServerCommand()
+        auto command = make_shared<CommandMessage>();
+        command->type = CommandType::CRAFT_ADDSERVER;
+        command->transId = 1;
+        command->address = myAddr;
+        command->to = leaderAddr;
+        command->from = myAddr;
+
+        rafthandler->onAddServerCommand(command, myAddr);
+
+        // Should result
+        //  - sending of an empty AppendEntries
+        //  - receiving a AppendEntries
+        //  - AppendEntries update
+        //  - log changes
+        //  - state changes
+
+    }
+}
+
+// Test RemoveServer
 

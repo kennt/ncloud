@@ -290,6 +290,7 @@ void Context::addEntries(int startIndex, vector<RaftLogEntry> & entries)
         SanityTestLog test;
         test.validateLogEntries(this->logEntries, 0, this->lastAppliedIndex+1);
     }
+
 }
 
 void Context::applyCommittedEntries()

@@ -383,15 +383,24 @@ void RaftMessageHandler::onAddServerCommand(shared_ptr<CommandMessage> command, 
 
         // Send back what we think is the leader
         reply->address = node->context.currentLeader;
+
+        auto raw = reply->toRawMessage(connection_->address(), command->from);
+        connection_->send(raw.get());
     }
     else {
-        reply = command->makeReply(true);
-        node->context.addMember(address);
-    }
+        // Catch the new server up via AppendEntries
+        // Wait until the previous config is committed
+        //  - check the state of all other servers in list
+        //  - if not up-to-date, force update
+        // Append new config entry to log, commmit via majority voting
+        // - force heartbeat and update
+        // reply true
 
-    // Send the reply
-    auto raw = reply->toRawMessage(connection_->address(), command->from);
-    connection_->send(raw.get());
+        // Start up updating of all nodes to the previous config
+        // (include the new server).
+        //reply = command->makeReply(true);
+        //node->context.addMember(address);
+    }
 }
 
 void RaftMessageHandler::onRemoveServerCommand(shared_ptr<CommandMessage> command, const Address& address)
@@ -481,10 +490,13 @@ void RaftMessageHandler::applyLogEntry(Command command,
                 address,
                 par->getCurrtime(),
                 0);
+            node->context.followers.emplace(address,
+                                            Context::LeaderStateEntry());
             break;
         case CMD_REMOVE_SERVER:
             node->member.removeFromMemberList(
                 address);
+            node->context.followers.erase(address);
             break;
         case CMD_CLEAR_LIST:
             node->member.memberList.clear();

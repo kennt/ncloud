@@ -342,7 +342,9 @@ public:
     
     // State manipulation APIs
     // This will not add the entry to the log, it applies the
-    // change to the "state machine"
+    // change to the "state machine".  To maintain consistency,
+    // all changes in the state machine (the membership list)
+    // should go through here.
     void applyLogEntry(Command command, const Address& address);
     void applyLogEntry(const RaftLogEntry& entry);
     void applyLogEntries(const vector<RaftLogEntry>& entries);
