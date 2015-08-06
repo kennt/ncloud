@@ -102,6 +102,18 @@ in python/commands.py.
 * `make socket` -- builds the executable, `Application` with SocketApp.cpp
 * `make test` -- builds the unit test executable, `test`
 
+### raft (In Progress)
+Builds a version that uses the Raft protocol for cluster memberhship.  This is
+a fairly large change as it changes the cluster to be leader-based.
+
+This is still work-in-progress and is unstable.
+
+* `make raft` -- builds the executable, `Application` with RaftApp.cpp. This is
+a socket-based application.
+* `make test` -- builds the unit test executable, `test'`.  This has two 
+added test files, `TestContext.cpp` and `TestRaft.cpp`.
+
+
 ## Future work
 * Better documentation
 * Better testing of the higher level code
