@@ -12,6 +12,7 @@
 
 using namespace Raft;
 using std::placeholders::_1;
+using std::placeholders::_2;
 
 void Raft::Message::write(stringstream& ss)
 {
@@ -41,8 +42,9 @@ unique_ptr<RawMessage> HeaderOnlyMessage::toRawMessage(const Address& from,
     throw AppException("Should not reach here");
 }
 
-void HeaderOnlyMessage::load(istringstream& is)
+void HeaderOnlyMessage::load(const RawMessage *raw)
 {
+    istringstream is(std::string((const char *)raw->data.get(), raw->size));
     this->read(is);
 }
 
@@ -65,8 +67,10 @@ unique_ptr<RawMessage> AppendEntriesMessage::toRawMessage(const Address &from,
     return rawMessageFromStream(from, to, ss);
 }
 
-void AppendEntriesMessage::load(istringstream& is)
+void AppendEntriesMessage::load(const RawMessage *raw)
 {
+    istringstream is(std::string((const char *)raw->data.get(), raw->size));
+
     this->read(is);
     assert(this->msgtype == MessageType::APPEND_ENTRIES);
 
@@ -96,8 +100,10 @@ unique_ptr<RawMessage> AppendEntriesReply::toRawMessage(const Address &from,
     return rawMessageFromStream(from, to, ss);
 }
 
-void AppendEntriesReply::load(istringstream& is)
+void AppendEntriesReply::load(const RawMessage *raw)
 {
+    istringstream is(std::string((const char *)raw->data.get(), raw->size));
+
     this->read(is);
     assert(this->msgtype == MessageType::APPEND_ENTRIES_REPLY);
 
@@ -118,8 +124,10 @@ unique_ptr<RawMessage> RequestVoteMessage::toRawMessage(const Address &from,
     return rawMessageFromStream(from, to, ss);
 }
 
-void RequestVoteMessage::load(istringstream& is)
+void RequestVoteMessage::load(const RawMessage *raw)
 {
+    istringstream is(std::string((const char *)raw->data.get(), raw->size));
+
     this->read(is);
     assert(this->msgtype == MessageType::REQUEST_VOTE);
 
@@ -145,12 +153,10 @@ unique_ptr<RawMessage> RequestVoteReply::toRawMessage(const Address &from,
     return rawMessageFromStream(from, to, ss);
 }
 
-// Loads the streamed binary data from the istringstream into a
-// RequestVoteReply.  It is assumed that the position of the stream is
-// at the head of the message.
-//
-void RequestVoteReply::load(istringstream& is)
+void RequestVoteReply::load(const RawMessage *raw)
 {
+    istringstream is(std::string((const char *)raw->data.get(), raw->size));
+
     this->read(is);
     assert(this->msgtype == MessageType::REQUEST_VOTE_REPLY);
 
@@ -195,6 +201,9 @@ void RaftMessageHandler::start(const Address &leader)
         // commit the membership list change
         node->context.saveToStore();
 
+        // We're assuming that we're the only server at this point
+        node->context.commitIndex = 1;
+
         // Special case!  Have the node start an election
         // immediately!
         node->context.currentState = State::CANDIDATE;
@@ -216,11 +225,8 @@ void RaftMessageHandler::onMessageReceived(const RawMessage *raw)
     if (!node)
         throw AppException("Network has been deleted");
 
-    istringstream ss(std::string((const char *)raw->data.get(), raw->size));
-
     HeaderOnlyMessage   header;
-    header.load(ss);
-    ss.seekg(0, ss.beg);    // reset to start of the buffer
+    header.load(raw);
 
     if (header.term > node->context.currentTerm) {
         //$ CHECK: Does this state change happen before
@@ -238,18 +244,19 @@ void RaftMessageHandler::onMessageReceived(const RawMessage *raw)
 
         // If there is one started, no need to keep it processing
         election->cancelElection();
+        heartbeat->stop();
     }
 
     switch(header.msgtype) {
         case MessageType::APPEND_ENTRIES:
-            onAppendEntries(raw->fromAddress, ss);
+            onAppendEntries(raw->fromAddress, raw);
             break;
         case MessageType::REQUEST_VOTE:
-            onRequestVote(raw->fromAddress, ss);
+            onRequestVote(raw->fromAddress, raw);
             break;
         case MessageType::APPEND_ENTRIES_REPLY:
         case MessageType::REQUEST_VOTE_REPLY:
-            onReply(raw->fromAddress, header, ss);
+            onReply(raw->fromAddress, header, raw);
             break;
         default:
             throw NetworkException(string_format("Unknown message type: %d", header.msgtype).c_str());
@@ -257,7 +264,7 @@ void RaftMessageHandler::onMessageReceived(const RawMessage *raw)
     }
 }
 
-void RaftMessageHandler::onAppendEntries(const Address& from, istringstream& ss)
+void RaftMessageHandler::onAppendEntries(const Address& from, const RawMessage *raw)
 {
     DEBUG_LOG(connection_->address(), "Append Entries received from %s",
               from.toString().c_str());
@@ -267,7 +274,7 @@ void RaftMessageHandler::onAppendEntries(const Address& from, istringstream& ss)
         throw AppException("Network has been deleted");
 
     shared_ptr<AppendEntriesMessage> message = make_shared<AppendEntriesMessage>();
-    message->load(ss);
+    message->load(raw);
 
     AppendEntriesReply  reply;
 
@@ -300,11 +307,11 @@ void RaftMessageHandler::onAppendEntries(const Address& from, istringstream& ss)
     // if from current leader, reset timeout
     if (from == node->context.currentLeader)
         election->reset(par->getCurrtime());
-    auto raw = reply.toRawMessage(address(), from);
-    this->connection()->send(raw.get());
+    auto rawReply = reply.toRawMessage(address(), from);
+    this->connection()->send(rawReply.get());
 }
 
-void RaftMessageHandler::onRequestVote(const Address& from, istringstream& ss)
+void RaftMessageHandler::onRequestVote(const Address& from, const RawMessage *raw)
 {
     auto node = netnode.lock();
     if (!node)
@@ -314,7 +321,7 @@ void RaftMessageHandler::onRequestVote(const Address& from, istringstream& ss)
                 from.toString().c_str());
 
     RequestVoteMessage    request;
-    request.load(ss);
+    request.load(raw);
 
     RequestVoteReply    reply;
     reply.transId = request.transId;
@@ -331,14 +338,16 @@ void RaftMessageHandler::onRequestVote(const Address& from, istringstream& ss)
         reply.voteGranted = true;
     }
 
-    auto raw = reply.toRawMessage(connection()->address(), from);
-    connection()->send(raw.get());
+    auto rawReply = reply.toRawMessage(connection()->address(), from);
+    connection()->send(rawReply.get());
 
     // If we have voted, reset the timeout
     election->reset(par->getCurrtime());
 }
 
-void RaftMessageHandler::onReply(const Address&from, const HeaderOnlyMessage& header, istringstream& is)
+void RaftMessageHandler::onReply(const Address&from,
+                                 const HeaderOnlyMessage& header,
+                                 const RawMessage *raw)
 {
     auto trans = findTransaction(header.transId);
     if (!trans)
@@ -347,21 +356,10 @@ void RaftMessageHandler::onReply(const Address&from, const HeaderOnlyMessage& he
     if (trans->onReceived == nullptr)
         return;     // no callback, nothing to do
 
-    auto result = trans->onReceived(trans.get(), is);
+    auto result = trans->onReceived(trans.get(), raw);
     if (result == Transaction::RESULT::DELETE)
         transactions.erase(header.transId);
 }
-
-void RaftMessageHandler::onAppendEntriesReply(const Address& from, istringstream& ss)
-{
-    throw NYIException("onAppendEntriesReply", __FILE__, __LINE__);
-}
-
-void RaftMessageHandler::onRequestVoteReply(const Address& from, istringstream& ss)
-{
-    throw NYIException("RaftMessageHandler::onRequestVoteReply", __FILE__, __LINE__);
-}
-
 
 // This has to implement the same functionality as the regular
 // AddServer() but with the added responsibility of sending
@@ -378,28 +376,63 @@ void RaftMessageHandler::onAddServerCommand(shared_ptr<CommandMessage> command, 
 
     shared_ptr<CommandMessage>  reply;
 
+    //$ TODO: check to see that we are not in the middle
+    // of some other membership change.  Only one change allowed
+    // at a time.
+
     if (node->context.currentState != State::LEADER) {
         reply = command->makeReply(false);
-
-        // Send back what we think is the leader
+        reply->address = node->context.currentLeader;   // send back the leader
+        reply->errmsg = "not the leader";
+    }
+    else if (this->addremove) {
+        reply = command->makeReply(false);
         reply->address = node->context.currentLeader;
-
-        auto raw = reply->toRawMessage(connection_->address(), command->from);
-        connection_->send(raw.get());
+        reply->errmsg = "Add/RemoveServer in progress, this operation is not allowed";
     }
     else {
-        // Catch the new server up via AppendEntries
-        // Wait until the previous config is committed
-        //  - check the state of all other servers in list
-        //  - if not up-to-date, force update
+        // Step 1 (done here): Catch the new server up, start an update
+        // transaction for that server
+        // Step 2 : wait until previous config is commited (after step 1 completes)
+        // Step 3 : append new entry, commit (after step 2 completes)
+        // Step 4 : reply ok (after step 3 completes)
+        //
+        int transIdUpdate = this->getNextMessageId();
+        auto trans = make_shared<UpdateTransaction>(log, par, node);
+
+        trans->transId = transIdUpdate;
+        // Catch the server up to this index/term
+        trans->lastLogIndex = node->context.logEntries.size()-1;
+        trans->lastLogTerm = node->context.logEntries[trans->lastLogIndex].termReceived;
+
+        trans->onReceived = std::bind(&RaftMessageHandler::transOnUpdateMessage, this, _1, _2);
+        trans->onTimeout = std::bind(&RaftMessageHandler::transOnUpdateTimeout, this, _1);
+        trans->onCompleted = std::bind(&RaftMessageHandler::transChangeServerOnCompleted, this, _1);
+
+        // Update the new server
+        trans->recipients.push_back(address);
+        addremove = trans;
+        transactions[trans->transId] = trans;
+
+        // Send out the initial appendEntries
+        AppendEntriesMessage append;
+        append.transId = transIdUpdate;
+        append.term = node->context.currentTerm;
+        append.leaderAddress = connection()->address();
+        append.prevLogIndex = trans->lastLogIndex;
+        append.prevLogTerm = trans->lastLogTerm;
+        append.leaderCommit = node->context.commitIndex;
+
+        auto raw = append.toRawMessage(connection()->address(), address);
+        connection()->send(raw.get());
         // Append new config entry to log, commmit via majority voting
         // - force heartbeat and update
-        // reply true
-
-        // Start up updating of all nodes to the previous config
-        // (include the new server).
-        //reply = command->makeReply(true);
         //node->context.addMember(address);
+    }
+
+    if (reply) {
+        auto raw = reply->toRawMessage(connection_->address(), command->from);
+        connection_->send(raw.get());
     }
 }
 
@@ -416,6 +449,7 @@ void RaftMessageHandler::onRemoveServerCommand(shared_ptr<CommandMessage> comman
 
         // Send back what we think is the leader
         reply->address = node->context.currentLeader;
+        reply->errmsg = "not the leader";
     }
     else {
         reply = command->makeReply(true);
@@ -444,7 +478,7 @@ void RaftMessageHandler::onTimeout()
     int currtime = par->getCurrtime();
     for (auto & elem : transactions) {
         if (elem.second->isTimedOut(currtime)) {
-            elem.second->nTimeouts++;
+            elem.second->advanceTimeout();
             if (elem.second->onTimeout == nullptr)
                 continue;
             if (elem.second->onTimeout(elem.second.get()) == Transaction::RESULT::DELETE) {
@@ -557,25 +591,27 @@ void RaftMessageHandler::initTimeoutTransactions()
         throw AppException("");
 
     // Create the transaction for the election timeout
-    auto trans = make_shared<Transaction>(log, par, node);
+    auto trans = make_shared<ElectionTransaction>(log, par, node);
     trans->transId = Transaction::INDEX::ELECTION;
-    trans->onTimeout = std::bind(&RaftMessageHandler::onElectionTimeout, this, _1);
+    trans->onTimeout = std::bind(&RaftMessageHandler::transOnElectionTimeout, this, _1);
     transactions[trans->transId] = trans;
     this->election = trans;
 
     // Create the transaction for the heartbeat timeout
-    trans = make_shared<Transaction>(log, par, node);
-    trans->transId = Transaction::INDEX::HEARTBEAT;
-    trans->onTimeout = std::bind(&RaftMessageHandler::onHeartbeatTimeout, this, _1);
-    transactions[trans->transId] = trans;
-    this->heartbeat = trans;
+    auto update = make_shared<Transaction>(log, par, node);
+    update->transId = Transaction::INDEX::HEARTBEAT;
+    update->onTimeout = std::bind(&RaftMessageHandler::transOnHeartbeatTimeout, this, _1);
+    transactions[update->transId] = update;
+    this->heartbeat = update;
 }
 
-Transaction::RESULT RaftMessageHandler::onElectionTimeout(Transaction *trans)
+Transaction::RESULT RaftMessageHandler::transOnElectionTimeout(Transaction *trans)
 {
     auto node = netnode.lock();
     if (!node)
         throw AppException("");
+
+    ElectionTransaction * elect = dynamic_cast<ElectionTransaction *>(trans);
 
     if (node->context.currentState == State::FOLLOWER) {
         // If it times out and we haven't voted for anyone this
@@ -590,40 +626,35 @@ Transaction::RESULT RaftMessageHandler::onElectionTimeout(Transaction *trans)
             !node->member.memberList.empty()) {
             // Election timeout!
             node->context.currentState = State::CANDIDATE;
-            node->context.startElection(node->member, trans);
+            node->context.startElection(node->member, elect);
         }
     }
     else if (node->context.currentState == State::CANDIDATE) {
         // Check our vote totals
-        if ((trans->total > 0) && (2*trans->successes > trans->total)) {
+        if ((elect->total > 0) && (2*elect->successes > elect->total)) {
             // majority vote, we have become the leader
             node->context.currentLeader = connection()->address();
             node->context.currentState = State::LEADER;
 
             // Turn off the election processing
-            trans->successes = trans->failures = trans->total = 0;
+            elect->successes = elect->failures = elect->total = 0;
 
-            // broadcast heartbeats
-            AppendEntriesMessage    message;
-            message.transId = getNextMessageId();
-            message.term = node->context.currentTerm;
-            message.leaderAddress = connection()->address();
-            message.prevLogIndex = static_cast<int>(node->context.logEntries.size()-1);
-            message.prevLogTerm = node->context.logEntries[message.prevLogIndex].termReceived;
-            message.leaderCommit = node->context.commitIndex;
-            
-            broadcast(&message);
+            // Send an initial heartbeat
+            heartbeat->onTimeout(heartbeat.get());
+
+            // we've become the leader, start the heartbeat
+            heartbeat->start(par->getCurrtime(), par->idleTimeout);
         }
         else {
             // election timeout, start a new election
-            node->context.startElection(node->member, trans);
+            node->context.startElection(node->member, elect);
         }
     }
 
     return Transaction::RESULT::KEEP;
 }
 
-Transaction::RESULT RaftMessageHandler::onHeartbeatTimeout(Transaction *trans)
+Transaction::RESULT RaftMessageHandler::transOnHeartbeatTimeout(Transaction *trans)
 {
     auto node = netnode.lock();
     if (!node)
@@ -631,10 +662,79 @@ Transaction::RESULT RaftMessageHandler::onHeartbeatTimeout(Transaction *trans)
 
     // If leader, send heartbeats
     if (node->context.currentState == State::LEADER) {
-        if (nextHeartbeat > par->getCurrtime()) {
-            //$ TODO: send heartbeat to all followers
-            throw NYIException("broadcast heartbeats", __FILE__, __LINE__);
-        }
+        AppendEntriesMessage    message;
+        message.transId = getNextMessageId();
+        message.term = node->context.currentTerm;
+        message.leaderAddress = connection()->address();
+        message.prevLogIndex = static_cast<int>(node->context.logEntries.size()-1);
+        message.prevLogTerm = node->context.logEntries[message.prevLogIndex].termReceived;
+        message.leaderCommit = node->context.commitIndex;
+            
+        broadcast(&message);
     }
     return Transaction::RESULT::KEEP;
+}
+
+Transaction::RESULT RaftMessageHandler::transOnUpdateMessage(Transaction *trans, const RawMessage *raw)
+{
+    UpdateTransaction * update = dynamic_cast<UpdateTransaction *>(trans);
+    if (!update)
+        throw AppException("");
+
+    AppendEntriesReply reply;
+    reply.load(raw);
+
+    // Is this in our recipient list? if not, skip
+    if (std::count(update->recipients.begin(),
+                   update->recipients.end(),
+                   raw->fromAddress) == 0)
+        return Transaction::RESULT::KEEP;
+
+    if (reply.success) {
+        // Update the followers data (nextIndex and matchIndex)
+        // Send more data if necessary
+        // Mark as complete if up-to-date
+        // If complete, add to satisified list
+    }
+    else {
+        // Failed, move further back in the log
+        // Send another request
+    }
+
+    // Have we achieved a quorum?  Start the next operation
+    // But keep this transaction around until all fully updated
+    if (update->isCompleted()) {
+        if (update->onCompleted) {
+            update->onCompleted(trans);
+            update->onCompleted = nullptr;
+        }
+
+        if (update->recipients.size() >= update->satisfied.size())
+            return Transaction::RESULT::DELETE;
+        else
+            return Transaction::RESULT::KEEP;
+    }
+    return Transaction::RESULT::KEEP;
+}
+
+Transaction::RESULT RaftMessageHandler::transOnUpdateTimeout(Transaction *trans)
+{
+    // Look for updates that are not yet up-to-date
+    // Resend as necessary
+    // Keep on going until maximum time passes
+    //
+    // Check to see if a node is still in the membership list.  If not
+    // remove from the satisified and recipients lists.
+    // then check the completed condition.
+    //
+    throw NYIException("transOnUpdateTimeout", __FILE__, __LINE__);
+    return Transaction::RESULT::KEEP;
+}
+
+void RaftMessageHandler::transChangeServerOnCompleted(Transaction *trans)
+{
+    // Start the next step in the process
+    // Commit the previous configuration, update a quorum
+    // of servers to the latest config
+    throw NYIException("transOnCompleted", __FILE__, __LINE__);
 }

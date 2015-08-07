@@ -18,6 +18,14 @@ using namespace Raft;
 // Although, sometimes specific calls to look at the internals of the RAFT
 // state may be needed.
 
+
+void runMessageLoop(shared_ptr<NetworkNode> node, Params *par, int tm)
+{
+    par->addToCurrtime(tm);
+    node->receiveMessages();
+    node->processQueuedMessages();
+}
+
 TEST_CASE("Raft single-node startup", "[raft][startup]")
 {
     string  name("mockleader");
@@ -91,9 +99,7 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
         // Note that the check occurs on election timeout (we would
         // check during receiving a vote, but there are no other nodes,
         // thus no other votes).
-        par->addToCurrtime(par->electionTimeout);
-        netnode->receiveMessages();
-        netnode->processQueuedMessages();
+        runMessageLoop(netnode, par, par->electionTimeout);
 
         // Election won, should be a leader      
         REQUIRE(netnode->context.currentState == Raft::State::LEADER);
@@ -130,9 +136,7 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
         REQUIRE(netnode->context.currentState == State::FOLLOWER);
 
         // Run through a single loop.
-        par->addToCurrtime(1);
-        netnode->receiveMessages();
-        netnode->processQueuedMessages();
+        runMessageLoop(netnode, par, 1);
 
         REQUIRE(netnode->context.currentState == Raft::State::FOLLOWER);
         REQUIRE(mockconn->messagesSent == 0);
@@ -148,9 +152,7 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
         auto raw = message.toRawMessage(leaderAddr, myAddr);
         leaderconn->send(raw.get());
 
-        par->addToCurrtime(1);
-        netnode->receiveMessages();
-        netnode->processQueuedMessages();
+        runMessageLoop(netnode, par, 1);
 
         // It should still be a follower, but it should be following
         // the leader
@@ -165,9 +167,7 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
 
         // Should be an AppendEntriesReply
         AppendEntriesReply reply;
-        istringstream ss(std::string((const char *)recvMessage->data.get(),
-                                     recvMessage->size));
-        reply.load(ss);
+        reply.load(recvMessage.get());
 
         // The logs don't match up, should get a false reply
         REQUIRE(reply.success == false);
@@ -214,9 +214,7 @@ TEST_CASE("Raft log ops", "[raft][log]")
         netnode->nodeStart(myAddr, 10);
 
         // Run through the election timeout
-        par->addToCurrtime(par->electionTimeout);
-        netnode->receiveMessages();
-        netnode->processQueuedMessages();
+        runMessageLoop(netnode, par, par->electionTimeout);
         REQUIRE(netnode->context.currentState == Raft::State::LEADER);
 
         // Ok, Add a follower node
@@ -302,9 +300,7 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
         netnode->nodeStart(leaderAddr, 10);
 
         // Run through the election timeout
-        par->addToCurrtime(par->electionTimeout);
-        netnode->receiveMessages();
-        netnode->processQueuedMessages();
+        runMessageLoop(netnode, par, par->electionTimeout);
         REQUIRE(netnode->context.currentState == Raft::State::LEADER);
 
         // Call through the onAddServerCommand()
@@ -317,15 +313,49 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
 
         rafthandler->onAddServerCommand(command, myAddr);
 
-        // Should result
-        //  - sending of an empty AppendEntries
-        //  - receiving a AppendEntries
-        //  - AppendEntries update
-        //  - log changes
-        //  - state changes
+        // Should attempt to update to previous config
+        // Start with an appendEntries
+        // Receive empty appendEntries on mockconn
+        auto raw = mockconn->recv(0);
+        REQUIRE(raw != nullptr);
+        HeaderOnlyMessage       header;
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
+
+        AppendEntriesMessage    append;
+        append.load(raw.get());
+        REQUIRE(append.term == 1);
+        REQUIRE(append.prevLogTerm == 0);
+        REQUIRE(append.prevLogIndex == 1);
+        REQUIRE(append.entries.size() == 0);
+        REQUIRE(append.leaderCommit == 1);
+
+        // Send a reply
+        AppendEntriesReply reply;
+        reply.transId = append.transId;
+        reply.term = append.term;
+        reply.success = false;
+        raw = reply.toRawMessage(myAddr, leaderAddr);
+        mockconn->send(raw.get());
+
+        runMessageLoop(netnode, par, 1);
+
+        // Receive appendEntries with data
+        raw = mockconn->recv(0);
+        REQUIRE(raw.get() != nullptr);
+        append.load(raw.get());
+
+        // Send a reply
+
+        // Check to see that the state is up-to-date
 
     }
 }
 
 // Test RemoveServer
+
+// Heartbeat tests
+// Test changing from leader->candidate
+// Test changing from candidate->leader
+
 

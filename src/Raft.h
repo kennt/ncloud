@@ -63,7 +63,7 @@ public:
     Message& operator=(const Message&) = default;
 
     // Loads the data from the stringstream into this object.
-    virtual void load(istringstream& ss) = 0;
+    virtual void load(const RawMessage *raw) = 0;
 
     // Creates a RawMessage and serializes the data for this object
     // into the RawMessage data.  Ownership of the RawMessage is passed
@@ -85,7 +85,7 @@ class HeaderOnlyMessage : public Message
 public:
     HeaderOnlyMessage() : Message(MessageType::MSGTYPE_NONE) {}
 
-    virtual void load(istringstream& ss) override;
+    virtual void load(const RawMessage *raw) override;
     virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
@@ -120,7 +120,7 @@ public:
         prevLogIndex(0), prevLogTerm(0), leaderCommit(0)
     {}
 
-    virtual void load(istringstream& ss) override;
+    virtual void load(const RawMessage *raw) override;
     virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
@@ -138,7 +138,7 @@ public:
     AppendEntriesReply() : Message(APPEND_ENTRIES_REPLY), success(false)
     {}
 
-    virtual void load(istringstream& ss) override;
+    virtual void load(const RawMessage *raw) override;
     virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
@@ -163,7 +163,7 @@ public:
     RequestVoteMessage() : Message(REQUEST_VOTE), lastLogIndex(0), lastLogTerm(0)
     {}
 
-    virtual void load(istringstream& ss) override;
+    virtual void load(const RawMessage *raw) override;
     virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
@@ -181,7 +181,7 @@ public:
     RequestVoteReply() : Message(REQUEST_VOTE_REPLY), voteGranted(false)
     {}
 
-    virtual void load(istringstream& ss) override;
+    virtual void load(const RawMessage *raw) override;
     virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
@@ -195,8 +195,9 @@ public:
 //
 // The onTimeout() callback is only called when the timeout is non-zero.
 //
-struct Transaction
+class Transaction
 {
+public:
     enum class RESULT { KEEP=0, DELETE };
     enum INDEX { ELECTION = -10, HEARTBEAT = -9 };
 
@@ -206,16 +207,6 @@ struct Transaction
     // set to a negative value (for non-message transactions).
     int         transId;
     int         term;
-
-    // The timeout callback will be called when
-    //      current_time >= (timeStart + timeout*nTimeouts)
-    // Note that this will be called whenever this condition
-    // is true.  To disable, set timeStart to -1.
-    int         timeStart;
-    int         timeout;
-    // The multiplier used for timeouts (starts at 1).
-    // Incremented each time a timeout occurs.
-    int         nTimeouts;
 
     // The original message and command that caused this message
     // Note that both may be set (a client command that causes
@@ -228,29 +219,24 @@ struct Transaction
     // RPCs that need to resend requests
     vector<Address> recipients;
 
-    // Used for calculating majority voting
-    // Setting total to 0 disables election tracking
-    // (and preventing the node from moving from candidate to leader)
-    int         total;
-    int         successes;
-    int         failures;
-    void        cancelElection()
-        { total = 0; }
-
     weak_ptr<NetworkNode>   netnode;
 
     Transaction(Log *log, Params *par, shared_ptr<NetworkNode> node) 
-        : log(log), transId(0), term(0),
-        timeStart(-1), timeout(0), nTimeouts(1),
-        total(0), successes(0), failures(0),
-        netnode(node)
+        : log(log), transId(0), term(0), netnode(node),
+        timeStart(-1), timeout(0), nTimeouts(1)
     {
         timeStart = par->getCurrtime();
     }
 
+    virtual ~Transaction() {}
+
     // Starts the timeout handling
     void start(int start, int interval)
         { timeStart = start; timeout = interval; nTimeouts = 1; }
+
+    // Advance to the next timeout
+    void advanceTimeout()
+        { nTimeouts++; }
 
     void reset(int newStart)
         { timeStart = newStart; nTimeouts = 1; }
@@ -268,7 +254,73 @@ struct Transaction
     // Returns RESULT::DELETE to remove this transaction
     // Returns RESULT::KEEP otherwise
     std::function<RESULT (Transaction *thisTrans)>   onTimeout;
-    std::function<RESULT (Transaction *thisTrans, istringstream& is)>   onReceived;
+    std::function<RESULT (Transaction *thisTrans, const RawMessage *raw)>   onReceived;
+
+protected:
+    // The timeout callback will be called when
+    //      current_time >= (timeStart + timeout*nTimeouts)
+    // Note that this will be called whenever this condition
+    // is true.  To disable, set timeStart to -1.
+    int         timeStart;
+    int         timeout;
+    // The multiplier used for timeouts (starts at 1).
+    // Incremented each time a timeout occurs.
+    int         nTimeouts;
+
+};
+
+// Use this for keeping track of election results.
+// This transaction completes when a majority result is determined.
+// Note that the voting list is copied into the transaction, so 
+// later changes do not affect the voting result.
+class ElectionTransaction : public Transaction
+{
+public:
+    // Used for calculating majority voting
+    // Setting total to 0 disables election tracking
+    // (and preventing the node from moving from candidate to leader)
+    int         total;
+    int         successes;
+    int         failures;
+    void        cancelElection()
+        { total = 0; }
+
+    ElectionTransaction(Log *log, Params *par, shared_ptr<NetworkNode> node)
+        : Transaction(log, par, node),
+        total(0), successes(0), failures(0)
+    {}
+};
+
+// Use this transaction for bringing followers up-to-date with
+// the leader. This transaction is not normally used for heartbeats.
+class UpdateTransaction : public Transaction
+{
+public:
+    UpdateTransaction(Log *log, Params *par, shared_ptr<NetworkNode> node)
+        : Transaction(log, par, node),
+        lastLogTerm(0), lastLogIndex(0)
+    {}
+
+    // The set of addresses that have caught up to lastLogIndex.
+    set<Address>        satisfied;
+
+    // For each recipient, this is the index where we match up.
+    // The goal is to get a majority to be up to lastLogIndex
+    map<Address, int>   matchIndexes;
+
+    // We are trying to catch up the logs to these values.
+    int     lastLogTerm;
+    int     lastLogIndex;
+
+    // Returns true if a majority of nodes caught up to lastLogIndex.
+    // This requires that satisfied.size()*2 > recipients.size()
+    bool    isCompleted()
+        { return 2*satisfied.size() > recipients.size(); }
+
+    // Called when the update has been committed (have to match up
+    // to lastLogTerm and lastLogIndex).  This will be called only
+    // once per transaction (unless manually set again).
+    std::function<void (Transaction *thisTrans)>   onCompleted;
 };
 
 
@@ -290,7 +342,7 @@ public:
                       shared_ptr<NetworkNode> netnode,
                       shared_ptr<IConnection> connection)
         : log(log), par(par), store(store), netnode(netnode),
-            connection_(connection), nextHeartbeat(0), nextMessageId(0)
+            connection_(connection), nextMessageId(0)
     {
     };
 
@@ -317,13 +369,15 @@ public:
     virtual void onTimeout() override;
 
     // Handlers for the individual messages
-    void onAppendEntries(const Address& from, istringstream& ss);
-    void onRequestVote(const Address& from, istringstream& ss);
+    void onAppendEntries(const Address& from, const RawMessage *raw);
+    void onRequestVote(const Address& from, const RawMessage *raw);
 
     // Replies are all handled here.  This is a dispatcher which
     // calls the separate onXXXReply() callbakcs and also cleans
     // up the transactions.
-    void onReply(const Address& from, const HeaderOnlyMessage& header, istringstream& ss);
+    void onReply(const Address& from,
+                 const HeaderOnlyMessage& header,
+                 const RawMessage *raw);
 
     // Handlers for command messages
     // i.e. those messages received via JSON command messages
@@ -337,8 +391,16 @@ public:
     // deactivated (timeout == 0). To start processing,
     // set the timeStart and timeout values.
     void initTimeoutTransactions();
-    Transaction::RESULT onElectionTimeout(Transaction *trans);
-    Transaction::RESULT onHeartbeatTimeout(Transaction *trans);
+    Transaction::RESULT transOnElectionTimeout(Transaction *trans);
+    Transaction::RESULT transOnHeartbeatTimeout(Transaction *trans);
+
+    Transaction::RESULT transOnUpdateMessage(Transaction *trans, const RawMessage *raw);
+    Transaction::RESULT transOnUpdateTimeout(Transaction *trans);
+
+    // The OnCompleted function for Add/RemoverServer functions.
+    // This will go onto the next step of the Add/RemoveServer process.
+    void transChangeServerOnCompleted(Transaction *trans);
+
     
     // State manipulation APIs
     // This will not add the entry to the log, it applies the
@@ -374,10 +436,6 @@ protected:
     // of the log entries.
     vector<Address>         addresses;
 
-    // The time to send out the next heartbeat, if set to 0
-    // then this will never trigger.
-    int                     nextHeartbeat;
-
     // List of currently open transactions
     map<int, shared_ptr<Transaction>>   transactions;
 
@@ -385,12 +443,16 @@ protected:
     int                     nextMessageId;
 
     // Hwlpful pointers to common transactions
-    shared_ptr<Transaction> election;
+    shared_ptr<ElectionTransaction> election;
     shared_ptr<Transaction> heartbeat;
 
-    // Specific reply-handlers
-    void onAppendEntriesReply(const Address& from, istringstream& ss);
-    void onRequestVoteReply(const Address& from, istringstream& ss);
+    // If this is not nullptr, then there is an Add/RemoveServer
+    // operation going on (only one is allowed at a time).
+    shared_ptr<Transaction>  addremove;
+
+    // Returns true if there is an UpdateTransaction in the
+    // list of transactions.
+    bool isUpdateTransactionInProgress();
 };
 
 }

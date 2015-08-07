@@ -128,6 +128,9 @@ TEST_CASE("Context", "[context]")
         REQUIRE(netnode->member.memberList.size() == 1);
         REQUIRE(netnode->member.memberList.front().address == addr2);
 
+        //$ TODO: Add checks to verify that the follower list and the
+        // membership lists are in sync
+
         // Check overwriting
         netnode->member.memberList.clear();
         netnode->context.init(rafthandler.get(), &store);

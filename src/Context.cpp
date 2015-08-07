@@ -191,7 +191,7 @@ void Context::onTimeout()
     this->applyCommittedEntries();
 }
 
-void Context::startElection(const MemberInfo& member, Raft::Transaction *trans)
+void Context::startElection(const MemberInfo& member, Raft::ElectionTransaction *elect)
 {
     DEBUG_LOG(this->handler->address(),
         "Starting election : term %d", this->currentTerm+1);
@@ -200,17 +200,17 @@ void Context::startElection(const MemberInfo& member, Raft::Transaction *trans)
     this->currentTerm++;
 
     // Vote for ourselves
-    trans->total = static_cast<int>(member.memberList.size());
-    trans->successes = 1;
-    trans->failures = 0;
-    trans->term = this->currentTerm;
+    elect->total = static_cast<int>(member.memberList.size());
+    elect->successes = 1;
+    elect->failures = 0;
+    elect->term = this->currentTerm;
 
-    assert(trans->total > 0);
+    assert(elect->total > 0);
 
     this->votedFor = this->handler->address();
 
     // Reset election timer
-    trans->reset(par->getCurrtime());
+    elect->reset(par->getCurrtime());
 
     // Send RequestVote RPCs to all other servers
     RequestVoteMessage  request;

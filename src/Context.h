@@ -28,7 +28,8 @@ class NetworkNode;
 
 namespace Raft {
 
-struct Transaction;
+class Transaction;
+class ElectionTransaction;
 
 // ================
 // System states (for the state table)
@@ -299,7 +300,8 @@ struct Context
     // Perform any actions/checking of the timeout
     void onTimeout();
 
-    void startElection(const MemberInfo& member, Raft::Transaction *trans);
+    void startElection(const MemberInfo& member,
+                       Raft::ElectionTransaction *elect);
 
     // Add new entries to the log, if an old entry conflicts they will
     // remove the conflict and all succeeding entries. Appends new
