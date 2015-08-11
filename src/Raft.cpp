@@ -16,6 +16,9 @@ using std::placeholders::_2;
 
 void Raft::Message::write(stringstream& ss)
 {
+    // Check that we've set the transId and term
+    assert(this->transId);
+    assert(this->term);
     write_raw<int>(ss, static_cast<int>(this->msgtype));
     write_raw<int>(ss, this->transId);
     write_raw<int>(ss, this->term);    
@@ -163,12 +166,496 @@ void RequestVoteReply::load(const RawMessage *raw)
     this->voteGranted = read_raw<bool>(is);
 }
 
-
-void RaftMessageHandler::start(const Address &leader)
+void Transaction::close()
 {
-    auto node = netnode.lock();
-    if (!node)
-        throw AppException("Network has been deleted");
+    onCompleted = nullptr;
+}
+
+shared_ptr<NetworkNode> Transaction::getNetworkNode()
+{
+    return this->handler->node();
+}
+
+void ElectionTimeoutTransaction::start()
+{
+}
+
+void ElectionTimeoutTransaction::close()
+{
+}
+
+Transaction::RESULT ElectionTimeoutTransaction::onReply(const RawMessage *raw)
+{
+    // Should not get here since we do not send any messages directly
+    throw AppException("should not be here");
+    return Transaction::RESULT::KEEP;
+}
+
+Transaction::RESULT ElectionTimeoutTransaction::onTimeout()
+{
+    auto node = getNetworkNode();
+
+    if (node->context.currentState == State::FOLLOWER) {
+        // If it times out and we haven't voted for anyone this
+        // term, then convert to candidate
+        //
+        // Since we reset the timeout when we receive an append_entries
+        // or reply to a request_vote this only triggers when we haven't
+        // seen either for a while
+        //
+        // Can't start an election if there are no members
+        if (!node->context.votedFor &&
+            !node->member.memberList.empty()) {
+            // Election timeout!
+            node->context.currentState = State::CANDIDATE;
+            node->context.startElection(node->member);
+        }
+    }
+
+    return Transaction::RESULT::KEEP;
+}
+
+void HeartbeatTimeoutTransaction::sendGroupUpdate()
+{
+    auto node = getNetworkNode();
+    auto update = make_shared<GroupUpdateTransaction>(
+                    this->log, this->par, this->handler);
+    update->transId = this->handler->getNextMessageId();
+    update->term = node->context.currentTerm;
+
+    update->init(node->member,
+                 node->context.getLastLogIndex(),
+                 node->context.getLastLogTerm());
+    update->startTimeout(par->idleTimeout);
+    update->start();
+}
+
+void HeartbeatTimeoutTransaction::start()
+{
+    sendGroupUpdate();
+}
+
+void HeartbeatTimeoutTransaction::close()
+{
+}
+
+Transaction::RESULT HeartbeatTimeoutTransaction::onReply(const RawMessage *raw)
+{
+    // Should not get here since we do not send any messages directly
+    throw AppException("should not be here");
+    return Transaction::RESULT::KEEP;
+}
+
+Transaction::RESULT HeartbeatTimeoutTransaction::onTimeout()
+{
+    sendGroupUpdate();
+    return Transaction::RESULT::KEEP;
+}
+
+void ElectionTransaction::init(const MemberInfo& member)
+{
+    // This assumes that we are part of the memberlist
+    assert(member.isMember(handler->address()));
+
+    yesVotes = 1;   // vote for ourself
+    noVotes = 0;
+    totalVotes = member.memberList.size();
+    voted.insert(handler->address());
+    for (auto & elem: member.memberList) {
+        recipients.push_back(elem.address);
+    }
+}
+
+void ElectionTransaction::start()
+{
+    auto node = getNetworkNode();
+
+    yesVotes = noVotes = 0;
+    totalVotes = static_cast<int>(recipients.size());
+
+    RequestVoteMessage request;
+    request.transId = this->handler->getNextMessageId();
+    request.term = node->context.currentTerm;
+    request.candidate = this->handler->address();
+    request.lastLogIndex = node->context.getLastLogIndex();
+    request.lastLogTerm = node->context.getLastLogTerm();
+
+    this->handler->broadcast(&request, recipients);
+}
+
+Transaction::RESULT ElectionTransaction::onReply(const RawMessage *raw)
+{
+    auto node = getNetworkNode();
+
+    RequestVoteReply reply;
+    reply.load(raw);
+
+    // If we are no longer a candidate, then quit this election
+    if (node->context.currentState != State::CANDIDATE)
+        return completed(false);
+
+    if (this->voted.count(raw->fromAddress) == 0) {
+        yesVotes += (reply.voteGranted ? 1 : 0);
+        noVotes += (reply.voteGranted ? 0 : 1);
+        this->voted.insert(raw->fromAddress);
+    }
+
+    if (isMajority())
+        return completed(yesVotes > noVotes);
+
+    return Transaction::RESULT::KEEP;
+}
+
+Transaction::RESULT ElectionTransaction::onTimeout()
+{
+    return completed(false);
+}
+
+void UpdateTransaction::init(const Address& address, int logIndex, int logTerm)
+{
+    this->recipient = address;
+    this->lastLogIndex = logIndex;
+    this->lastLogTerm = logTerm;
+}
+
+void UpdateTransaction::start()
+{
+    sendAppendEntriesRequest(this->lastLogIndex);
+}
+
+Transaction::RESULT UpdateTransaction::onReply(const RawMessage *raw)
+{
+    auto node = getNetworkNode();
+
+    // If we have become a follower, shut down the update
+    // (it no longer makes sense since we are not the leader)
+    if (node->context.currentState != State::LEADER)
+        return completed(false);
+
+    AppendEntriesReply reply;
+    reply.load(raw);
+
+    if (reply.success) {
+        // Are we all caught up?
+        if (lastLogIndex == lastSentLogIndex)
+            return completed(true);
+        sendAppendEntriesRequest(this->lastSentLogIndex+1);
+    }
+    else {
+        // Resend, moving down the log
+        if (this->lastSentLogIndex == 0)
+            return completed(false);
+        sendAppendEntriesRequest(this->lastSentLogIndex-1);
+    }
+    return Transaction::RESULT::KEEP;
+}
+
+Transaction::RESULT UpdateTransaction::onTimeout()
+{
+    auto node = getNetworkNode();
+
+    if (isLifetime())
+        return completed(false);
+
+    // If we are no longer the leader, quit the update
+    if (node->context.currentState != State::LEADER)
+        return completed(false);
+
+    // If this is a normal timeout, resend the last request
+    sendAppendEntriesRequest(this->lastSentLogIndex);
+    return Transaction::RESULT::KEEP;
+}
+
+void UpdateTransaction::sendAppendEntriesRequest(int index)
+{
+    auto node = getNetworkNode();
+
+    AppendEntriesMessage append;
+    append.transId = this->transId;
+    append.term = node->context.currentTerm;
+    append.leaderAddress = handler->address();
+    append.prevLogIndex = index;
+    append.prevLogTerm = node->context.logEntries[index].termReceived;
+    append.leaderCommit = node->context.commitIndex;
+
+    if ((index >= 0) && (index < (node->context.logEntries.size()-1))) {
+        //$ TODO: look into sending more than one entry at a time
+        append.entries.push_back(node->context.logEntries[index+1]);
+    }
+
+    this->lastSentLogTerm = append.prevLogTerm;
+    this->lastSentLogIndex = append.prevLogIndex;
+
+    auto raw = append.toRawMessage(handler->address(), recipient);
+    handler->connection()->send(raw.get());    
+}
+
+void GroupUpdateTransaction::init(const MemberInfo& member, int lastIndex, int lastTerm)
+{
+    for (auto & elem : member.memberList) {
+        recipients.push_back(elem.address);
+    }
+    this->lastLogIndex = lastIndex;
+    this->lastLogTerm = lastTerm;
+}
+
+void GroupUpdateTransaction::init(const vector<Address>& members, int lastIndex, int lastTerm)
+{
+    recipients = members;
+    this->lastLogIndex = lastIndex;
+    this->lastLogTerm = lastTerm;
+}
+
+void GroupUpdateTransaction::close()
+{
+    Transaction::close();
+
+    // Close and remove all active child transactions
+    for (auto & elem : this->activeChildren) {
+        elem.second->close();
+        this->handler->removeTransaction(elem.first);
+    }
+    this->activeChildren.clear();
+}
+
+void GroupUpdateTransaction::start()
+{
+    auto node = getNetworkNode();
+    
+    assert(std::count(recipients.begin(), recipients.end(),
+                      this->handler->address()) == 1);
+
+    totalVotes = recipients.size();
+    successVotes = failureVotes = 0;
+
+    // Start all of the individual updates
+    for (auto & address : recipients) {
+        if (address == this->handler->address())
+            continue;
+
+        auto update = make_shared<UpdateTransaction>(log, par, handler);
+        update->term = this->term;
+        update->transId = this->handler->getNextMessageId();
+        update->onCompleted = std::bind(&GroupUpdateTransaction::onChildCompleted,
+                                        this, _1, _2);
+        update->init(address, this->lastLogIndex, this->lastLogTerm);
+
+        update->start();
+        //$ TODO: what should this timeout be?
+        update->startTimeout(par->electionTimeout);;
+
+        this->activeChildren[update->transId] = update;
+        this->handler->addTransaction(update);
+    }
+
+}
+
+Transaction::RESULT GroupUpdateTransaction::onReply(const RawMessage *raw)
+{
+    // SHould not get here, the GroupUpdate does not receive
+    // any messages itself.
+    throw AppException("should not be here");
+    return Transaction::RESULT::KEEP;
+}
+
+Transaction::RESULT GroupUpdateTransaction::onTimeout()
+{
+    auto node = getNetworkNode();
+
+    // If we are no longer the leader, quit the update
+    if (node->context.currentState != State::LEADER)
+        return completed(false);
+
+    if (isLifetime())
+        return completed(false);
+
+    if (isMajority())
+        return completed(successVotes > failureVotes);
+
+    return Transaction::RESULT::KEEP;
+}
+
+void GroupUpdateTransaction::onChildCompleted(Transaction *trans, bool success)
+{
+    auto update = dynamic_cast<UpdateTransaction *>(trans);
+    assert(update);
+
+    if (this->replied.count(update->address()) != 0)
+        return;
+    this->replied.insert(update->address());
+
+    successVotes += (success ? 1 : 0);
+    failureVotes += (success ? 0 : 1);
+
+    this->activeChildren.erase(trans->transId);
+    this->handler->removeTransaction(trans->transId);
+
+    if (isMajority() && this->onCompleted) {
+        // Notify of success!
+        completed(successVotes > failureVotes);
+    }
+}
+
+void MemberChangeTransaction::init(const MemberInfo& member)
+{
+    // Pull off the member addresses
+    for (const auto & elem : member.memberList) {
+        recipients.push_back(elem.address);
+    }
+}
+
+void MemberChangeTransaction::start()
+{
+    // The first step is to catch the new server up 
+    // to the previous config.
+    // Start an individual UpdateTransaction to manage this.
+    auto trans = make_shared<UpdateTransaction>(log, par, handler);
+
+    trans->transId = this->handler->getNextMessageId();
+    trans->term = this->term;
+
+    trans->init(this->server, this->lastLogIndex, this->lastLogTerm);
+
+    trans->onCompleted = std::bind(&MemberChangeTransaction::onServerUpdateCompleted,
+                                   this, _1, _2);
+
+    this->currentTrans = trans;
+    this->handler->addTransaction(trans);
+
+    trans->start();
+    //$ TODO: what should this timeout be?
+    trans->startTimeout(5*par->idleTimeout);
+}
+
+void MemberChangeTransaction::close()
+{
+    Transaction::close();
+    if (currentTrans)
+        currentTrans->close();        
+    currentTrans = nullptr;
+}
+
+Transaction::RESULT MemberChangeTransaction::onReply(const RawMessage *raw)
+{
+    // Should not be here as we should not be getting a reply
+    // with this transId.  We should not be sending out any
+    // messages with this transId.
+    throw AppException("should not be here");
+    return Transaction::RESULT::DELETE;
+}
+
+Transaction::RESULT MemberChangeTransaction::onTimeout()
+{
+    // We've timed out!
+    // Reply with a failure
+    return completed(false);
+}
+
+void MemberChangeTransaction::onServerUpdateCompleted(Transaction *trans,
+                                                      bool success)
+{
+    if (this->currentTrans) {
+        this->handler->removeTransaction(this->currentTrans->transId);
+        this->currentTrans = nullptr;
+    }
+
+    auto node = getNetworkNode();
+
+    if (success) {
+        // move onto the next step
+
+        // Add the current server to the config
+        // (Note that we are still updating only up to the
+        // previous configuration). 
+        this->handler->applyLogEntry(this->command, this->server);
+
+        // Update a majority of the servers to the configuration
+        // without the current config change.
+        auto update = make_shared<GroupUpdateTransaction>(log, par, handler);
+        update->transId = this->handler->getNextMessageId();
+        update->init(recipients, this->lastLogIndex, this->lastLogTerm);
+
+        this->onCompleted = std::bind(&MemberChangeTransaction::onPrevConfigCompleted,
+                                      this, _1, _2);
+
+        this->currentTrans = update;
+        this->handler->addTransaction(update);
+
+        update->setLifetime(par->getCurrtime() + 5*par->electionTimeout);
+
+        update->start();
+    }
+    else {
+        // Step one failed, end this transaction
+        completed(false);
+    }
+}
+
+void MemberChangeTransaction::onPrevConfigCompleted(Transaction *trans,
+                                                    bool success)
+{
+    if (this->currentTrans) {
+        this->handler->removeTransaction(this->currentTrans->transId);
+        this->currentTrans = nullptr;
+    }
+
+    auto node = getNetworkNode();
+
+    if (success) {
+        // next step, commit the current change (either add/remove)
+        this->handler->applyLogEntry(this->command, this->server);
+
+        // make the change
+        auto update = make_shared<GroupUpdateTransaction>(log, par, handler);
+        update->transId = this->handler->getNextMessageId();
+
+        update->init(recipients,
+                     node->context.getLastLogIndex(),
+                     node->context.getLastLogTerm());
+
+        this->onCompleted = std::bind(&MemberChangeTransaction::onCommandUpdateCompleted,
+                                      this, _1, _2);
+
+        this->currentTrans = update;
+        this->handler->addTransaction(update);
+
+        update->start();        
+
+        update->setLifetime(par->getCurrtime() + 5*par->electionTimeout);
+    }
+    else {
+        completed(false);
+    }
+}
+
+void MemberChangeTransaction::onCommandUpdateCompleted(Transaction *trans,
+                                                       bool success)
+{
+    if (this->currentTrans) {
+        this->handler->removeTransaction(this->currentTrans->transId);
+        this->currentTrans = nullptr;
+    }
+
+    auto node = getNetworkNode();
+
+    // We're done!  Success or failure
+    // Notify the command client of the result
+
+    if (this->command) {
+        auto reply = this->commandMessage->makeReply(success);
+        reply->address = node->context.currentLeader;
+
+        auto raw = reply->toRawMessage(this->handler->address(),
+                                       this->commandMessage->from);
+        this->handler->connection()->send(raw.get());
+    }
+
+    completed(success);
+}
+
+void RaftHandler::start(const Address &leader)
+{
+    auto node = getNetworkNode();
 
     node->member.inGroup = false;
     node->member.inited = true;
@@ -207,11 +694,11 @@ void RaftMessageHandler::start(const Address &leader)
         // Special case!  Have the node start an election
         // immediately!
         node->context.currentState = State::CANDIDATE;
-        node->context.startElection(node->member, election.get());
+        node->context.startElection(node->member);
     }
 
     // Start the election timeout
-    election->start(par->getCurrtime(), par->electionTimeout);
+    election->startTimeout(par->electionTimeout);
 }
 
 // This is a callback and is called when the connection has received
@@ -219,11 +706,9 @@ void RaftMessageHandler::start(const Address &leader)
 //
 // The RawMessage will not be changed.
 //
-void RaftMessageHandler::onMessageReceived(const RawMessage *raw)
+void RaftHandler::onMessageReceived(const RawMessage *raw)
 {
-    auto node = netnode.lock();
-    if (!node)
-        throw AppException("Network has been deleted");
+    auto node = getNetworkNode();
 
     HeaderOnlyMessage   header;
     header.load(raw);
@@ -243,8 +728,7 @@ void RaftMessageHandler::onMessageReceived(const RawMessage *raw)
         node->context.votedFor.clear();
 
         // If there is one started, no need to keep it processing
-        election->cancelElection();
-        heartbeat->stop();
+        heartbeat->stopTimeout();
     }
 
     switch(header.msgtype) {
@@ -264,14 +748,12 @@ void RaftMessageHandler::onMessageReceived(const RawMessage *raw)
     }
 }
 
-void RaftMessageHandler::onAppendEntries(const Address& from, const RawMessage *raw)
+void RaftHandler::onAppendEntries(const Address& from, const RawMessage *raw)
 {
     DEBUG_LOG(connection_->address(), "Append Entries received from %s",
               from.toString().c_str());
 
-    auto node = netnode.lock();
-    if (!node)
-        throw AppException("Network has been deleted");
+    auto node = getNetworkNode();
 
     shared_ptr<AppendEntriesMessage> message = make_shared<AppendEntriesMessage>();
     message->load(raw);
@@ -306,16 +788,14 @@ void RaftMessageHandler::onAppendEntries(const Address& from, const RawMessage *
 
     // if from current leader, reset timeout
     if (from == node->context.currentLeader)
-        election->reset(par->getCurrtime());
+        election->resetTimeout(par->getCurrtime());
     auto rawReply = reply.toRawMessage(address(), from);
     this->connection()->send(rawReply.get());
 }
 
-void RaftMessageHandler::onRequestVote(const Address& from, const RawMessage *raw)
+void RaftHandler::onRequestVote(const Address& from, const RawMessage *raw)
 {
-    auto node = netnode.lock();
-    if (!node)
-        throw AppException("Network has been deleted");
+    auto node = getNetworkNode();
 
     DEBUG_LOG(connection_->address(), "Request Vote received from %s",
                 from.toString().c_str());
@@ -342,10 +822,10 @@ void RaftMessageHandler::onRequestVote(const Address& from, const RawMessage *ra
     connection()->send(rawReply.get());
 
     // If we have voted, reset the timeout
-    election->reset(par->getCurrtime());
+    election->resetTimeout(par->getCurrtime());
 }
 
-void RaftMessageHandler::onReply(const Address&from,
+void RaftHandler::onReply(const Address&from,
                                  const HeaderOnlyMessage& header,
                                  const RawMessage *raw)
 {
@@ -353,12 +833,11 @@ void RaftMessageHandler::onReply(const Address&from,
     if (!trans)
         return;     // nothing to do here, cannot find transaction
 
-    if (trans->onReceived == nullptr)
-        return;     // no callback, nothing to do
-
-    auto result = trans->onReceived(trans.get(), raw);
-    if (result == Transaction::RESULT::DELETE)
+    auto result = trans->onReply(raw);
+    if (result == Transaction::RESULT::DELETE) {
+        trans->close();
         transactions.erase(header.transId);
+    }
 }
 
 // This has to implement the same functionality as the regular
@@ -368,11 +847,9 @@ void RaftMessageHandler::onReply(const Address&from,
 // We do not forward the request, just return a failed notification,
 // with the leader address in the address portion.
 //
-void RaftMessageHandler::onAddServerCommand(shared_ptr<CommandMessage> command, const Address& address)
+void RaftHandler::onAddServerCommand(shared_ptr<CommandMessage> command, const Address& address)
 {
-    auto node = netnode.lock();
-    if (!node)
-        throw AppException("Network has been deleted");
+    auto node = getNetworkNode();
 
     shared_ptr<CommandMessage>  reply;
 
@@ -385,49 +862,30 @@ void RaftMessageHandler::onAddServerCommand(shared_ptr<CommandMessage> command, 
         reply->address = node->context.currentLeader;   // send back the leader
         reply->errmsg = "not the leader";
     }
-    else if (this->addremove) {
+    else if (this->memberchange) {
         reply = command->makeReply(false);
         reply->address = node->context.currentLeader;
         reply->errmsg = "Add/RemoveServer in progress, this operation is not allowed";
     }
     else {
-        // Step 1 (done here): Catch the new server up, start an update
-        // transaction for that server
-        // Step 2 : wait until previous config is commited (after step 1 completes)
-        // Step 3 : append new entry, commit (after step 2 completes)
-        // Step 4 : reply ok (after step 3 completes)
-        //
         int transIdUpdate = this->getNextMessageId();
-        auto trans = make_shared<UpdateTransaction>(log, par, node);
+        auto trans = make_shared<MemberChangeTransaction>(log, par, this);
 
         trans->transId = transIdUpdate;
-        // Catch the server up to this index/term
-        trans->lastLogIndex = node->context.logEntries.size()-1;
-        trans->lastLogTerm = node->context.logEntries[trans->lastLogIndex].termReceived;
 
-        trans->onReceived = std::bind(&RaftMessageHandler::transOnUpdateMessage, this, _1, _2);
-        trans->onTimeout = std::bind(&RaftMessageHandler::transOnUpdateTimeout, this, _1);
-        trans->onCompleted = std::bind(&RaftMessageHandler::transChangeServerOnCompleted, this, _1);
+        trans->lastLogIndex = node->context.getLastLogIndex();
+        trans->lastLogTerm = node->context.getLastLogTerm();
+        trans->server = address;
+        trans->command = Command::CMD_ADD_SERVER;
+        trans->commandMessage = command;
 
-        // Update the new server
-        trans->recipients.push_back(address);
-        addremove = trans;
-        transactions[trans->transId] = trans;
+        this->memberchange = trans;
+        this->transactions[trans->transId] = trans;
 
-        // Send out the initial appendEntries
-        AppendEntriesMessage append;
-        append.transId = transIdUpdate;
-        append.term = node->context.currentTerm;
-        append.leaderAddress = connection()->address();
-        append.prevLogIndex = trans->lastLogIndex;
-        append.prevLogTerm = trans->lastLogTerm;
-        append.leaderCommit = node->context.commitIndex;
-
-        auto raw = append.toRawMessage(connection()->address(), address);
-        connection()->send(raw.get());
-        // Append new config entry to log, commmit via majority voting
-        // - force heartbeat and update
-        //node->context.addMember(address);
+        // Get this started!
+        trans->start();
+        //$ TODO: what should the overall timeout be here?
+        trans->startTimeout(5*par->electionTimeout);
     }
 
     if (reply) {
@@ -436,11 +894,9 @@ void RaftMessageHandler::onAddServerCommand(shared_ptr<CommandMessage> command, 
     }
 }
 
-void RaftMessageHandler::onRemoveServerCommand(shared_ptr<CommandMessage> command, const Address& address)
+void RaftHandler::onRemoveServerCommand(shared_ptr<CommandMessage> command, const Address& address)
 {
-    auto node = netnode.lock();
-    if (!node)
-        throw AppException("Network has been deleted");
+    auto node = getNetworkNode();
 
     shared_ptr<CommandMessage>  reply;
 
@@ -466,12 +922,10 @@ void RaftMessageHandler::onRemoveServerCommand(shared_ptr<CommandMessage> comman
 // connection timeout).  Thus perform any actions that should be done
 // on idle here.
 //
-void RaftMessageHandler::onTimeout()
+void RaftHandler::onTimeout()
 {
     // run the node maintenance loop
-    auto node = netnode.lock();
-    if (!node)
-        throw AppException("Network has been deleted");
+    auto node = getNetworkNode();
 
     // Process transaction timeouts
     vector<int> idsToRemove;
@@ -479,10 +933,9 @@ void RaftMessageHandler::onTimeout()
     for (auto & elem : transactions) {
         if (elem.second->isTimedOut(currtime)) {
             elem.second->advanceTimeout();
-            if (elem.second->onTimeout == nullptr)
-                continue;
-            if (elem.second->onTimeout(elem.second.get()) == Transaction::RESULT::DELETE) {
+            if (elem.second->onTimeout() == Transaction::RESULT::DELETE) {
                 // remove this transaction
+                elem.second->close();
                 idsToRemove.push_back(elem.first);
             }
         }
@@ -502,17 +955,15 @@ void RaftMessageHandler::onTimeout()
 // actually the membership list.  This is kept separate from
 // the leader-kept follower list.
 //
-void RaftMessageHandler::applyLogEntry(const RaftLogEntry& entry)
+void RaftHandler::applyLogEntry(const RaftLogEntry& entry)
 {
     applyLogEntry(entry.command, entry.address);
 }
 
-void RaftMessageHandler::applyLogEntry(Command command,
-                                       const Address& address)
+void RaftHandler::applyLogEntry(Command command,
+                                const Address& address)
 {
-    auto node = netnode.lock();
-    if (!node)
-        throw AppException("");
+    auto node = getNetworkNode();
 
     switch(command) {
         case CMD_NONE:
@@ -541,31 +992,27 @@ void RaftMessageHandler::applyLogEntry(Command command,
     }
 }
 
-void RaftMessageHandler::applyLogEntries(const vector<RaftLogEntry> &entries)
+void RaftHandler::applyLogEntries(const vector<RaftLogEntry> &entries)
 {
     for (const auto & elem : entries) {
         this->applyLogEntry(elem);
     }
 }
 
-bool RaftMessageHandler::isLogCurrent(int index, int term)
+bool RaftHandler::isLogCurrent(int index, int term)
 {
-    auto node = netnode.lock();
-    if (!node)
-        throw AppException("");
+    auto node = getNetworkNode();
 
-    if (index != (node->context.logEntries.size()-1))
+    if (index != node->context.getLastLogIndex())
         return false;
     return term == node->context.logEntries[index].termReceived;
 }
 
-void RaftMessageHandler::broadcast(Message *message)
+void RaftHandler::broadcast(Message *message)
 {
     assert(message);
 
-    auto node = netnode.lock();
-    if (!node)
-        throw AppException("");
+    auto node = getNetworkNode();
 
     for (const auto & elem: node->member.memberList) {
         if (elem.address == address())
@@ -576,7 +1023,18 @@ void RaftMessageHandler::broadcast(Message *message)
     }
 }
 
-shared_ptr<Transaction> RaftMessageHandler::findTransaction(int transid)
+void RaftHandler::broadcast(Message *message, vector<Address> &recips)
+{
+    for (const auto & elem: recips) {
+        if (elem == address())
+            continue;
+
+        auto raw = message->toRawMessage(address(), elem);
+        connection()->send(raw.get());
+    }
+}
+
+shared_ptr<Transaction> RaftHandler::findTransaction(int transid)
 {
     auto it = transactions.find(transid);
     if (it == transactions.end())
@@ -584,157 +1042,73 @@ shared_ptr<Transaction> RaftMessageHandler::findTransaction(int transid)
     return it->second;
 }
 
-void RaftMessageHandler::initTimeoutTransactions()
+void RaftHandler::addTransaction(shared_ptr<Transaction> trans)
 {
-    auto node = netnode.lock();
-    if (!node)
-        throw AppException("");
+    // Note, only one transaction with a given transid is allowed
+    // at one time
+    if (transactions.count(trans->transId) > 0)
+        throw AppException("duplicate transid");
+    transactions[trans->transId] = trans;
+}
+
+void RaftHandler::removeTransaction(int transid)
+{
+    auto it = transactions.find(transid);
+    if (it != transactions.end())
+        transactions.erase(it);
+}
+
+void RaftHandler::initTimeoutTransactions()
+{
+    auto node = getNetworkNode();
 
     // Create the transaction for the election timeout
-    auto trans = make_shared<ElectionTransaction>(log, par, node);
+    auto trans = make_shared<ElectionTimeoutTransaction>(log, par, this);
     trans->transId = Transaction::INDEX::ELECTION;
-    trans->onTimeout = std::bind(&RaftMessageHandler::transOnElectionTimeout, this, _1);
     transactions[trans->transId] = trans;
     this->election = trans;
 
     // Create the transaction for the heartbeat timeout
-    auto update = make_shared<Transaction>(log, par, node);
-    update->transId = Transaction::INDEX::HEARTBEAT;
-    update->onTimeout = std::bind(&RaftMessageHandler::transOnHeartbeatTimeout, this, _1);
-    transactions[update->transId] = update;
-    this->heartbeat = update;
+    auto heartbeat = make_shared<HeartbeatTimeoutTransaction>(log, par, this);
+    heartbeat->transId = Transaction::INDEX::HEARTBEAT;
+    transactions[heartbeat->transId] = heartbeat;
+    this->heartbeat = heartbeat;
 }
 
-Transaction::RESULT RaftMessageHandler::transOnElectionTimeout(Transaction *trans)
+void RaftHandler::onCompletedElection(Transaction *trans, bool success)
 {
-    auto node = netnode.lock();
-    if (!node)
-        throw AppException("");
+    auto node = getNetworkNode();
 
-    ElectionTransaction * elect = dynamic_cast<ElectionTransaction *>(trans);
+    if (node->context.currentState != State::CANDIDATE)
+        return;
 
-    if (node->context.currentState == State::FOLLOWER) {
-        // If it times out and we haven't voted for anyone this
-        // term, then convert to candidate
-        //
-        // Since we reset the timeout when we receive an append_entries
-        // or reply to a request_vote this only triggers when we haven't
-        // seen either for a while
-        //
-        // Can't start an election if there are no members
-        if (!node->context.votedFor &&
-            !node->member.memberList.empty()) {
-            // Election timeout!
-            node->context.currentState = State::CANDIDATE;
-            node->context.startElection(node->member, elect);
-        }
-    }
-    else if (node->context.currentState == State::CANDIDATE) {
-        // Check our vote totals
-        if ((elect->total > 0) && (2*elect->successes > elect->total)) {
-            // majority vote, we have become the leader
-            node->context.currentLeader = connection()->address();
-            node->context.currentState = State::LEADER;
+    if (success) {
+        node->context.switchToLeader();
 
-            // Turn off the election processing
-            elect->successes = elect->failures = elect->total = 0;
+        // on becoming a leader, sendout an initial heartbeat
+        auto update = make_shared<GroupUpdateTransaction>(this->log,
+                                                          this->par,
+                                                          this);
+        update->transId = this->getNextMessageId();
+        update->term = node->context.currentTerm;
+        update->init(node->member,
+                     node->context.getLastLogIndex(),
+                     node->context.getLastLogTerm());
 
-            // Send an initial heartbeat
-            heartbeat->onTimeout(heartbeat.get());
-
-            // we've become the leader, start the heartbeat
-            heartbeat->start(par->getCurrtime(), par->idleTimeout);
-        }
-        else {
-            // election timeout, start a new election
-            node->context.startElection(node->member, elect);
-        }
-    }
-
-    return Transaction::RESULT::KEEP;
-}
-
-Transaction::RESULT RaftMessageHandler::transOnHeartbeatTimeout(Transaction *trans)
-{
-    auto node = netnode.lock();
-    if (!node)
-        throw AppException("");
-
-    // If leader, send heartbeats
-    if (node->context.currentState == State::LEADER) {
-        AppendEntriesMessage    message;
-        message.transId = getNextMessageId();
-        message.term = node->context.currentTerm;
-        message.leaderAddress = connection()->address();
-        message.prevLogIndex = static_cast<int>(node->context.logEntries.size()-1);
-        message.prevLogTerm = node->context.logEntries[message.prevLogIndex].termReceived;
-        message.leaderCommit = node->context.commitIndex;
-            
-        broadcast(&message);
-    }
-    return Transaction::RESULT::KEEP;
-}
-
-Transaction::RESULT RaftMessageHandler::transOnUpdateMessage(Transaction *trans, const RawMessage *raw)
-{
-    UpdateTransaction * update = dynamic_cast<UpdateTransaction *>(trans);
-    if (!update)
-        throw AppException("");
-
-    AppendEntriesReply reply;
-    reply.load(raw);
-
-    // Is this in our recipient list? if not, skip
-    if (std::count(update->recipients.begin(),
-                   update->recipients.end(),
-                   raw->fromAddress) == 0)
-        return Transaction::RESULT::KEEP;
-
-    if (reply.success) {
-        // Update the followers data (nextIndex and matchIndex)
-        // Send more data if necessary
-        // Mark as complete if up-to-date
-        // If complete, add to satisified list
+        //$ TODO: what should the timeout be here?
+        // this is the lifetime timeout
+        update->startTimeout(5*par->electionTimeout);
     }
     else {
-        // Failed, move further back in the log
-        // Send another request
+        // try again
+        node->context.startElection(node->member);
     }
-
-    // Have we achieved a quorum?  Start the next operation
-    // But keep this transaction around until all fully updated
-    if (update->isCompleted()) {
-        if (update->onCompleted) {
-            update->onCompleted(trans);
-            update->onCompleted = nullptr;
-        }
-
-        if (update->recipients.size() >= update->satisfied.size())
-            return Transaction::RESULT::DELETE;
-        else
-            return Transaction::RESULT::KEEP;
-    }
-    return Transaction::RESULT::KEEP;
 }
 
-Transaction::RESULT RaftMessageHandler::transOnUpdateTimeout(Transaction *trans)
+void RaftHandler::onCompletedMemberChange(Transaction *trans, bool success)
 {
-    // Look for updates that are not yet up-to-date
-    // Resend as necessary
-    // Keep on going until maximum time passes
-    //
-    // Check to see if a node is still in the membership list.  If not
-    // remove from the satisified and recipients lists.
-    // then check the completed condition.
-    //
-    throw NYIException("transOnUpdateTimeout", __FILE__, __LINE__);
-    return Transaction::RESULT::KEEP;
-}
+    memberchange->close();
+    this->removeTransaction(memberchange->transId);
 
-void RaftMessageHandler::transChangeServerOnCompleted(Transaction *trans)
-{
-    // Start the next step in the process
-    // Commit the previous configuration, update a quorum
-    // of servers to the latest config
-    throw NYIException("transOnCompleted", __FILE__, __LINE__);
+    memberchange = nullptr;
 }

@@ -70,7 +70,7 @@ void Application::init(const char *filename)
 
         auto networknode = make_shared<NetworkNode>(name, log, par, network);
         auto connection = network->create(addr);
-        auto rafthandler = make_shared<Raft::RaftMessageHandler>(log, par, networknode, connection);
+        auto rafthandler = make_shared<Raft::RaftHandler>(log, par, networknode, connection);
 
         networknode->registerHandler(ConnectType::MEMBER,
                                      connection, rafthandler);

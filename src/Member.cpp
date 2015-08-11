@@ -24,7 +24,7 @@ void MemberInfo::removeFromMemberList(const Address &address)
 	}
 }
 
-bool MemberInfo::isMember(const Address& address)
+bool MemberInfo::isMember(const Address& address) const
 {
 	for (auto & elem: memberList) {
 		if (elem.address == address)

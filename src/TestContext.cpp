@@ -19,18 +19,18 @@ using namespace Raft;
 // Test the Context class.  The Context class (generally) is
 // responsible for maintaining the Raft state.
 //
-// There is a bit of interaction between the RaftMessageHandler and
+// There is a bit of interaction between the RaftHandler and
 // the Context. That tests are left up to the functional tests in
 // TestRaft.cpp.
 //
-// This is similar to MVC.  In this case Context=M RaftMessageHandler=C
+// This is similar to MVC.  In this case Context=M RaftHandler=C
 // (and no V).
 
 TEST_CASE("Context", "[context]")
 {
     string  name("mockleader");
 
-    // The context gets created as part of a RaftMessageHandler
+    // The context gets created as part of a RaftHandler
     // so just test the one that's a part of the message handler
     //
     // Thus we don't go through the MessageHandler startup.
@@ -51,7 +51,7 @@ TEST_CASE("Context", "[context]")
 
     SECTION("initialization") {
         Raft::MemoryBasedContextStore store(par);
-        auto rafthandler = make_shared<Raft::RaftMessageHandler>(nullptr, par, &store, netnode, conn);        
+        auto rafthandler = make_shared<Raft::RaftHandler>(nullptr, par, &store, netnode, conn);        
 
         par->resetCurrtime();
         network->reset();
@@ -76,7 +76,7 @@ TEST_CASE("Context", "[context]")
     // Test RaftLogEntry APIs
     SECTION("addEntries") {
         Raft::MemoryBasedContextStore store(par);
-        auto rafthandler = make_shared<Raft::RaftMessageHandler>(nullptr, par, &store, netnode, conn);        
+        auto rafthandler = make_shared<Raft::RaftHandler>(nullptr, par, &store, netnode, conn);        
 
         par->resetCurrtime();
         network->reset();

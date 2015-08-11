@@ -197,9 +197,9 @@ public:
 // Encapsulates all the state needed by the Raft algorithm.
 // This is purely a way to aggregate all of the state
 // information into one place, instead of members in the
-// RaftMessageHandler.
+// RaftHandler.
 // ==================
-class RaftMessageHandler;
+class RaftHandler;
 
 struct Context
 {
@@ -209,7 +209,7 @@ struct Context
         commitIndex(0), lastAppliedIndex(0), currentTerm(0)
     {}
 
-    void init(RaftMessageHandler *handler,
+    void init(RaftHandler *handler,
               ContextStoreInterface *store);
 
     // ==================
@@ -222,7 +222,7 @@ struct Context
     // Pointer to the handler that contains this context
     // The lifetime of the context is bound to the handler
     // (so there is no need to release/delete the pointer).
-    RaftMessageHandler *    handler;
+    RaftHandler *    handler;
 
     // The store interface to used when loading/saving
     // the persisted context data.
@@ -300,8 +300,7 @@ struct Context
     // Perform any actions/checking of the timeout
     void onTimeout();
 
-    void startElection(const MemberInfo& member,
-                       Raft::ElectionTransaction *elect);
+    void startElection(const MemberInfo& member);
 
     // Add new entries to the log, if an old entry conflicts they will
     // remove the conflict and all succeeding entries. Appends new
@@ -310,6 +309,14 @@ struct Context
 
     // Applies committed but not-yet-applied entries
     void applyCommittedEntries();
+
+    // APIs for switching states
+    void switchToLeader();
+    void switchToCandidate();
+    void switchToFollower();
+
+    int getLastLogIndex()   { return this->logEntries.size() - 1; }
+    int getLastLogTerm()    { return this->logEntries.back().termReceived; }
 };
 
 

@@ -26,6 +26,11 @@ void runMessageLoop(shared_ptr<NetworkNode> node, Params *par, int tm)
     node->processQueuedMessages();
 }
 
+// Test some basic message-handling
+TEST_CASE("Raft message handling", "[raft][messages]")
+{
+}
+
 TEST_CASE("Raft single-node startup", "[raft][startup]")
 {
     string  name("mockleader");
@@ -59,7 +64,7 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
         network->reset();
 
         auto netnode = make_shared<NetworkNode>(name, nullptr, par, network);
-        auto rafthandler = make_shared<Raft::RaftMessageHandler>(nullptr, par, &store, netnode, conn);
+        auto rafthandler = make_shared<Raft::RaftHandler>(nullptr, par, &store, netnode, conn);
         netnode->registerHandler(ConnectType::MEMBER,
                                  conn,
                                  rafthandler);
@@ -121,7 +126,7 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
         network->reset();
 
         auto netnode = make_shared<NetworkNode>(name, nullptr, par, network);
-        auto rafthandler = make_shared<Raft::RaftMessageHandler>(nullptr, par, &store, netnode, conn);
+        auto rafthandler = make_shared<Raft::RaftHandler>(nullptr, par, &store, netnode, conn);
         auto mockconn = network->findMockConnection(myAddr);
         netnode->registerHandler(ConnectType::MEMBER,
                                  conn,
@@ -207,7 +212,7 @@ TEST_CASE("Raft log ops", "[raft][log]")
 
         // Startup the leader
         auto netnode = make_shared<NetworkNode>(name, nullptr, par, network);
-        auto rafthandler = make_shared<Raft::RaftMessageHandler>(nullptr, par, &store, netnode, conn);
+        auto rafthandler = make_shared<Raft::RaftHandler>(nullptr, par, &store, netnode, conn);
         netnode->registerHandler(ConnectType::MEMBER,
                                  conn,
                                  rafthandler);
@@ -292,7 +297,7 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
 
         // Startup the leader
         auto netnode = make_shared<NetworkNode>(name, nullptr, par, network);
-        auto rafthandler = make_shared<Raft::RaftMessageHandler>(nullptr, par, 
+        auto rafthandler = make_shared<Raft::RaftHandler>(nullptr, par, 
                                 &store, netnode, leaderconn);
         netnode->registerHandler(ConnectType::MEMBER,
                                  leaderconn,

@@ -11,6 +11,8 @@
 #include "Raft.h"
 
 using namespace Raft;
+using std::placeholders::_1;
+using std::placeholders::_2;
 
 
 void RaftLogEntry::write(stringstream& ss)
@@ -56,7 +58,7 @@ void MemoryBasedContextStore::reset()
     current.clear();
 }
 
-void Context::init(RaftMessageHandler *handler,
+void Context::init(RaftHandler *handler,
                    ContextStoreInterface *store)
 {
     this->handler = handler;
@@ -191,7 +193,7 @@ void Context::onTimeout()
     this->applyCommittedEntries();
 }
 
-void Context::startElection(const MemberInfo& member, Raft::ElectionTransaction *elect)
+void Context::startElection(const MemberInfo& member)
 {
     DEBUG_LOG(this->handler->address(),
         "Starting election : term %d", this->currentTerm+1);
@@ -199,28 +201,22 @@ void Context::startElection(const MemberInfo& member, Raft::ElectionTransaction 
     // Increment current term
     this->currentTerm++;
 
-    // Vote for ourselves
-    elect->total = static_cast<int>(member.memberList.size());
-    elect->successes = 1;
-    elect->failures = 0;
-    elect->term = this->currentTerm;
+    auto election = make_shared<ElectionTransaction>(this->log,
+                                                     this->par,
+                                                     this->handler);
+    election->transId = this->handler->getNextMessageId();
+    election->onCompleted = std::bind(&RaftHandler::onCompletedElection,
+                                     this->handler, _1, _2);
+    election->term = this->currentTerm;
+    election->init(member);
 
-    assert(elect->total > 0);
-
+    election->start();
     this->votedFor = this->handler->address();
 
-    // Reset election timer
-    elect->reset(par->getCurrtime());
+    this->handler->addTransaction(election);
 
-    // Send RequestVote RPCs to all other servers
-    RequestVoteMessage  request;
-    request.transId = this->handler->getNextMessageId();
-    request.term = this->currentTerm;
-    request.candidate = this->handler->address();
-    request.lastLogIndex = static_cast<int>(this->logEntries.size()-1);
-    request.lastLogTerm = this->logEntries.back().termReceived;
-
-    this->handler->broadcast(&request);
+    //$ TODO: add a random timeout to the election timeout
+    election->startTimeout(par->electionTimeout);
 }
 
 void Context::addEntries(int startIndex, vector<RaftLogEntry> & entries)
@@ -302,6 +298,22 @@ void Context::applyCommittedEntries()
         }
         this->lastAppliedIndex = this->commitIndex;
     }
+}
+
+void Context::switchToLeader()
+{
+    this->currentLeader = this->handler->address();
+    this->currentState = State::LEADER;
+}
+
+void Context::switchToCandidate()
+{
+    this->currentState = State::CANDIDATE;
+}
+
+void Context::switchToFollower()
+{
+    this->currentState = State::FOLLOWER;
 }
 
 void SanityTestLog::validateLogEntries(const vector<RaftLogEntry>& entries,

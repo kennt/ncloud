@@ -185,13 +185,11 @@ public:
     virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
 };
 
-
 // Transactions are used to track RPCs and their replies.  This are
 // started and then checked periodically within the onTimeout() call.
 //
+// The base transaction class (below), supports basic timeout handling.
 // In Raft, RPCs are long-lived and can stay alive indefinitely.
-//
-// These transactions may also be used for timer functions.
 //
 // The onTimeout() callback is only called when the timeout is non-zero.
 //
@@ -202,47 +200,51 @@ public:
     enum INDEX { ELECTION = -10, HEARTBEAT = -9 };
 
     Log *       log;
+    Params *    par;
 
     // This is ususally the message transId, but may be
     // set to a negative value (for non-message transactions).
     int         transId;
     int         term;
 
-    // The original message and command that caused this message
-    // Note that both may be set (a client command that causes
-    // a message to be sent).  Either (or both) may be set to nullptr.
-    shared_ptr<Message> original;
-    shared_ptr<Command> command;
+    RaftHandler *    handler;
 
-    // Recipient addresses (for non-response). This collection
-    // may be modified from a callback. One use case is for 
-    // RPCs that need to resend requests
-    vector<Address> recipients;
-
-    weak_ptr<NetworkNode>   netnode;
-
-    Transaction(Log *log, Params *par, shared_ptr<NetworkNode> node) 
-        : log(log), transId(0), term(0), netnode(node),
-        timeStart(-1), timeout(0), nTimeouts(1)
+    Transaction(Log *log, Params *par, RaftHandler *handler)
+        : log(log), transId(0), term(0), handler(handler),
+        timeStart(-1), timeout(0), nTimeouts(1), lifetime(0)
     {
         timeStart = par->getCurrtime();
     }
 
     virtual ~Transaction() {}
 
+    // Call this to get the transaction started (usually sends off some
+    // kind of message).
+    virtual void start() = 0;
+
+    // Forces the shutdown of the transaction (doesn't matter if completed
+    // or not).
+    virtual void close();
+
+    // A reply has been received with this transid
+    virtual Transaction::RESULT onReply(const RawMessage *raw) = 0;
+
+    // A timeout has occurred
+    virtual Transaction::RESULT onTimeout() = 0;
+
     // Starts the timeout handling
-    void start(int start, int interval)
-        { timeStart = start; timeout = interval; nTimeouts = 1; }
+    void startTimeout(int interval)
+        { timeStart = par->getCurrtime(); timeout = interval; nTimeouts = 1; }
 
     // Advance to the next timeout
     void advanceTimeout()
         { nTimeouts++; }
 
-    void reset(int newStart)
+    void resetTimeout(int newStart)
         { timeStart = newStart; nTimeouts = 1; }
 
     // Stops the timeout handling (the callbacks will not be invoked).
-    void stop() { timeStart = -1; }
+    void stopTimeout() { timeStart = -1; }
 
     bool isTimedOut(int currtime)
     {
@@ -251,10 +253,15 @@ public:
         return currtime >= (timeStart + (nTimeouts * timeout));
     }
 
-    // Returns RESULT::DELETE to remove this transaction
-    // Returns RESULT::KEEP otherwise
-    std::function<RESULT (Transaction *thisTrans)>   onTimeout;
-    std::function<RESULT (Transaction *thisTrans, const RawMessage *raw)>   onReceived;
+    // This is an upper bound on the lifetime of a transaction.
+    // After this a transaction should request deletion.
+    void setLifetime(int lifetime)
+    {
+        this->lifetime = par->getCurrtime() + lifetime;
+    }
+
+    // Call this function, when the function has completed or timed out.
+    std::function<void (Transaction *trans, bool success)> onCompleted;
 
 protected:
     // The timeout callback will be called when
@@ -267,67 +274,244 @@ protected:
     // Incremented each time a timeout occurs.
     int         nTimeouts;
 
+    // Upper bound on the lifetime of a transaction
+    // Setting this to 0 turns off the lifetime check (infinite lifetime)
+    int         lifetime;
+
+    bool        isLifetime()
+        { return this->lifetime && par->getCurrtime() > this->lifetime; }
+
+    Transaction::RESULT completed(bool success)
+    {
+        close();
+        if (this->onCompleted) {
+            this->onCompleted(this, success);
+            this->onCompleted = nullptr;
+        }
+        return Transaction::RESULT::DELETE;
+    }
+
+    shared_ptr<NetworkNode> getNetworkNode();
 };
 
-// Use this for keeping track of election results.
+// Use this transaction to handle election timeouts.
+// When this class times out, it means that it can start
+// an election (if a follower)
+class ElectionTimeoutTransaction : public Transaction
+{
+public:
+    ElectionTimeoutTransaction(Log *log, Params *par, RaftHandler *handler)
+        : Transaction(log, par, handler)
+    {}
+
+    virtual void start() override;
+    virtual void close() override;
+    virtual Transaction::RESULT onReply(const RawMessage *raw) override;
+    virtual Transaction::RESULT onTimeout() override;
+
+protected:
+};
+
+// Use this transaction to handle heartbeat timeotus
+// This will wake up every now and then and send out an AppendEntries
+// to every node (basically runs a GroupUpdateTransaction)
+class HeartbeatTimeoutTransaction : public Transaction
+{
+public:
+    HeartbeatTimeoutTransaction(Log *log, Params *par, RaftHandler *handler)
+        : Transaction(log, par, handler)
+    {}
+
+    virtual void start() override;
+    virtual void close() override;
+    virtual Transaction::RESULT onReply(const RawMessage *raw) override;
+    virtual Transaction::RESULT onTimeout() override;
+
+protected:
+    void sendGroupUpdate();
+};
+
+// Use this to monitor the vote for a SINGLE follower.
+// For voting, use a GroupElectionTransaction to record the
+// results.
 // This transaction completes when a majority result is determined.
 // Note that the voting list is copied into the transaction, so 
 // later changes do not affect the voting result.
 class ElectionTransaction : public Transaction
 {
 public:
-    // Used for calculating majority voting
-    // Setting total to 0 disables election tracking
-    // (and preventing the node from moving from candidate to leader)
-    int         total;
-    int         successes;
-    int         failures;
-    void        cancelElection()
-        { total = 0; }
-
-    ElectionTransaction(Log *log, Params *par, shared_ptr<NetworkNode> node)
-        : Transaction(log, par, node),
-        total(0), successes(0), failures(0)
+    ElectionTransaction(Log *log, Params *par, RaftHandler *handler)
+        : Transaction(log, par, handler),
+        yesVotes(0), noVotes(0), totalVotes(0)
     {}
+
+    void init(const MemberInfo &member);
+
+    virtual void start() override;
+    //virtual void close() override;
+    virtual Transaction::RESULT onReply(const RawMessage *raw) override;
+    virtual Transaction::RESULT onTimeout() override;
+
+protected:
+    int         yesVotes;
+    int         noVotes;
+    int         totalVotes;
+    set<Address> voted;
+
+    vector<Address> recipients;
+    // Returns true if we have received a majority of replies
+    // (either success or failure)
+    bool        isMajority()
+        { return (2*yesVotes > totalVotes) || (2*noVotes > totalVotes); }
+
 };
 
+// Use this transaction to update a SINGLE follower. If updating a
+// group of servers, use the GroupUpdateTransaction as a parent
+// transaction.
 // Use this transaction for bringing followers up-to-date with
 // the leader. This transaction is not normally used for heartbeats.
 class UpdateTransaction : public Transaction
 {
 public:
-    UpdateTransaction(Log *log, Params *par, shared_ptr<NetworkNode> node)
-        : Transaction(log, par, node),
+    UpdateTransaction(Log *log, Params *par, RaftHandler *handler)
+        : Transaction(log, par, handler),
+        lastLogIndex(0), lastLogTerm(0),
+        lastSentLogIndex(0), lastSentLogTerm(0)
+    {}
+
+    void init(const Address& address, int lastIndex, int lastTerm);
+
+    virtual void start() override;
+    //virtual void close() override;
+    virtual Transaction::RESULT onReply(const RawMessage *raw) override;
+    virtual Transaction::RESULT onTimeout() override;
+
+    const Address& address() { return recipient; }
+
+protected:
+    Address     recipient;
+
+    // We are trying to catch up the logs to these values.
+    int         lastLogIndex;
+    int         lastLogTerm;
+
+    // The values that were in the last appendEntries request
+    int         lastSentLogIndex;
+    int         lastSentLogTerm;
+
+    void        sendAppendEntriesRequest(int index);
+};
+
+
+// Use this to accumulate the results of multiple actions.
+// This will "complete" when a quorum (or majority) of actions
+// register as completed.  It will remove itself only after
+// the timeout is reached or all servers have registered completion.
+//
+// This is for following the updates of multiple servers.
+//
+class GroupUpdateTransaction : public Transaction
+{
+public:
+    GroupUpdateTransaction(Log *log, Params *par, RaftHandler *handler)
+        : Transaction(log, par, handler),
+        lastLogIndex(0), lastLogTerm(0),
+        totalVotes(0), successVotes(0), failureVotes(0)
+    {}
+
+    void init(const MemberInfo& member, int lastIndex, int lastTerm);
+    void init(const vector<Address> &members, int lastIndex, int lastTerm);
+
+    virtual void start() override;
+    virtual void close() override;
+    virtual Transaction::RESULT onReply(const RawMessage *raw) override;
+    virtual Transaction::RESULT onTimeout() override;
+
+protected:
+    int     lastLogIndex;
+    int     lastLogTerm;
+
+    // Recipients that have said they were completed
+    // (keeps track of nodes that have replied)
+    set<Address> replied;
+
+    int     totalVotes;
+    int     successVotes;
+    int     failureVotes;
+
+    // Full set of recipients
+    vector<Address> recipients;
+    map<int, shared_ptr<UpdateTransaction>> activeChildren;
+
+    // Returns true if we have received a majority of either
+    // yes or no replies.
+    bool        isMajority()
+        { return (2*successVotes > totalVotes) || (2*failureVotes > totalVotes); }
+
+    // This is called by the child transactions when they have completed
+    // their operations.
+    void onChildCompleted(Transaction *childTrans, bool success);
+};
+
+// Use this when Adding/Removing servers from the cluster membership.
+// This class will take care of coordinating the various steps needed
+// for this operation:
+//  (1) Catch the new server up to the previous configuration
+//  (2) Wait until the previous config is committed
+//  (3) Append the new entry, commit
+//  (4) Reply ok
+class MemberChangeTransaction : public Transaction
+{
+public:
+    MemberChangeTransaction(Log *log, Params *par, RaftHandler *handler)
+        : Transaction(log, par, handler),
         lastLogTerm(0), lastLogIndex(0)
     {}
 
-    // The set of addresses that have caught up to lastLogIndex.
-    set<Address>        satisfied;
-
-    // For each recipient, this is the index where we match up.
-    // The goal is to get a majority to be up to lastLogIndex
-    map<Address, int>   matchIndexes;
+    // The address of the server being added/deleted
+    Address     server;
+    Command     command;
+    shared_ptr<CommandMessage> commandMessage;
 
     // We are trying to catch up the logs to these values.
-    int     lastLogTerm;
-    int     lastLogIndex;
+    int         lastLogTerm;
+    int         lastLogIndex;
 
-    // Returns true if a majority of nodes caught up to lastLogIndex.
-    // This requires that satisfied.size()*2 > recipients.size()
-    bool    isCompleted()
-        { return 2*satisfied.size() > recipients.size(); }
+    void init(const MemberInfo& member);
 
-    // Called when the update has been committed (have to match up
-    // to lastLogTerm and lastLogIndex).  This will be called only
-    // once per transaction (unless manually set again).
-    std::function<void (Transaction *thisTrans)>   onCompleted;
+    // Starts the operation, sends the initial AppendEntries
+    // message and initializes the timeouts.
+    virtual void start() override;
+    virtual void close() override;
+    virtual Transaction::RESULT onReply(const RawMessage *raw) override;
+    virtual Transaction::RESULT onTimeout() override;
+
+protected:
+    vector<Address>     recipients;
+
+    // The current operation begin performed (depends on
+    // where we are in the process).
+    shared_ptr<Transaction> currentTrans;
+
+    // This gets called upon completion of the first step, the
+    // update of the target server (this step is not needed when removing).
+    void onServerUpdateCompleted(Transaction *trans, bool success);
+
+    // This gets called upon completion of the second step, the
+    // committing of the previous configuration (w/o the current command).
+    void onPrevConfigCompleted(Transaction *trans, bool success);
+
+    // This gets called upon completion of the third step, the
+    // commiting of the newest command (completion of this step is completion
+    // of the update). This will send the command reply.
+    void onCommandUpdateCompleted(Transaction *trans, bool success);
 };
-
 
 // The MessageHandler for the Raft protocol.  This replaces the normal
 // message-handling protocol for Group Membership.
 //
-class RaftMessageHandler: public IMessageHandler
+class RaftHandler: public IMessageHandler
 {
 public:
     // The log, par, and store are direct pointers, and the
@@ -336,17 +520,17 @@ public:
     // Since these belong to the system, this is a reliable
     // assumption.
     //
-    RaftMessageHandler(Log *log, 
-                      Params *par,
-                      ContextStoreInterface *store,
-                      shared_ptr<NetworkNode> netnode,
-                      shared_ptr<IConnection> connection)
+    RaftHandler(Log *log, 
+                Params *par,
+                ContextStoreInterface *store,
+                shared_ptr<NetworkNode> netnode,
+                shared_ptr<IConnection> connection)
         : log(log), par(par), store(store), netnode(netnode),
             connection_(connection), nextMessageId(0)
     {
     };
 
-    virtual ~RaftMessageHandler() {};
+    virtual ~RaftHandler() {};
 
     // Initializes the MessageHandler, if needed. This will be called
     // before onMessageReceived() or onTimeout() will be called.
@@ -385,21 +569,14 @@ public:
     void onRemoveServerCommand(shared_ptr<CommandMessage> command, const Address& address);
 
     // Transaction support
-    shared_ptr<Transaction> findTransaction(int transid);    
+    shared_ptr<Transaction> findTransaction(int transid);
+    void addTransaction(shared_ptr<Transaction> trans);
+    void removeTransaction(int transid);
 
     // Create the timeout transactions, these are initially 
     // deactivated (timeout == 0). To start processing,
     // set the timeStart and timeout values.
     void initTimeoutTransactions();
-    Transaction::RESULT transOnElectionTimeout(Transaction *trans);
-    Transaction::RESULT transOnHeartbeatTimeout(Transaction *trans);
-
-    Transaction::RESULT transOnUpdateMessage(Transaction *trans, const RawMessage *raw);
-    Transaction::RESULT transOnUpdateTimeout(Transaction *trans);
-
-    // The OnCompleted function for Add/RemoverServer functions.
-    // This will go onto the next step of the Add/RemoveServer process.
-    void transChangeServerOnCompleted(Transaction *trans);
 
     
     // State manipulation APIs
@@ -421,9 +598,18 @@ public:
     Address address() { return connection_->address(); }
     shared_ptr<IConnection> connection() { return connection_; }
 
+    // Be careful with this API as this will keep a refcount on the
+    // NetworkNode!
+    shared_ptr<NetworkNode> node() { return getNetworkNode(); }
+
     // Broadcasts a message to all members
     // (skips self).
     void broadcast(Message *message);
+    void broadcast(Message *message, vector<Address> & recipients);
+
+    // Transaction callbacks
+    void onCompletedElection(Transaction *trans, bool success);
+    void onCompletedMemberChange(Transaction *trans, bool success);
 
 protected:
     Log *                   log;
@@ -442,17 +628,26 @@ protected:
     // Unique id used to track messages/transactions
     int                     nextMessageId;
 
-    // Hwlpful pointers to common transactions
-    shared_ptr<ElectionTransaction> election;
-    shared_ptr<Transaction> heartbeat;
+    // Hwlpful pointers to common timeouts
+    // This is for tracking election timeouts!  not voting elections!
+    shared_ptr<ElectionTimeoutTransaction> election;
+    shared_ptr<HeartbeatTimeoutTransaction> heartbeat;
 
     // If this is not nullptr, then there is an Add/RemoveServer
     // operation going on (only one is allowed at a time).
-    shared_ptr<Transaction>  addremove;
+    shared_ptr<MemberChangeTransaction>  memberchange;
 
     // Returns true if there is an UpdateTransaction in the
     // list of transactions.
     bool isUpdateTransactionInProgress();
+
+    shared_ptr<NetworkNode> getNetworkNode()
+    {
+        auto node = netnode.lock();
+        if (!node)
+            throw AppException("network not available");
+        return node;
+    }
 };
 
 }
