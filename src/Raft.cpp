@@ -259,7 +259,7 @@ void ElectionTransaction::init(const MemberInfo& member)
 
     yesVotes = 1;   // vote for ourself
     noVotes = 0;
-    totalVotes = member.memberList.size();
+    totalVotes = static_cast<int>(member.memberList.size());
     voted.insert(handler->address());
     for (auto & elem: member.memberList) {
         recipients.push_back(elem.address);
@@ -269,9 +269,6 @@ void ElectionTransaction::init(const MemberInfo& member)
 void ElectionTransaction::start()
 {
     auto node = getNetworkNode();
-
-    yesVotes = noVotes = 0;
-    totalVotes = static_cast<int>(recipients.size());
 
     RequestVoteMessage request;
     request.transId = this->handler->getNextMessageId();
@@ -308,6 +305,11 @@ Transaction::RESULT ElectionTransaction::onReply(const RawMessage *raw)
 
 Transaction::RESULT ElectionTransaction::onTimeout()
 {
+    // Need to check the degenerate case (if we are the only
+    // node alive).
+    if (isMajority())
+        return completed(yesVotes > noVotes);
+
     return completed(false);
 }
 
@@ -425,7 +427,7 @@ void GroupUpdateTransaction::start()
     assert(std::count(recipients.begin(), recipients.end(),
                       this->handler->address()) == 1);
 
-    totalVotes = recipients.size();
+    totalVotes = static_cast<int>(recipients.size());
     successVotes = failureVotes = 0;
 
     // Start all of the individual updates
@@ -698,7 +700,7 @@ void RaftHandler::start(const Address &leader)
     }
 
     // Start the election timeout
-    election->startTimeout(par->electionTimeout);
+    this->election->startTimeout(par->electionTimeout);
 }
 
 // This is a callback and is called when the connection has received
@@ -759,7 +761,7 @@ void RaftHandler::onAppendEntries(const Address& from, const RawMessage *raw)
     message->load(raw);
 
     AppendEntriesReply  reply;
-
+    reply.transId = message->transId;
     reply.term = node->context.currentTerm;
 
     if (message->term < node->context.currentTerm) {
@@ -1063,13 +1065,13 @@ void RaftHandler::initTimeoutTransactions()
     auto node = getNetworkNode();
 
     // Create the transaction for the election timeout
-    auto trans = make_shared<ElectionTimeoutTransaction>(log, par, this);
+    auto trans = make_shared<ElectionTimeoutTransaction>(this->log, this->par, this);
     trans->transId = Transaction::INDEX::ELECTION;
     transactions[trans->transId] = trans;
     this->election = trans;
 
     // Create the transaction for the heartbeat timeout
-    auto heartbeat = make_shared<HeartbeatTimeoutTransaction>(log, par, this);
+    auto heartbeat = make_shared<HeartbeatTimeoutTransaction>(this->log, this->par, this);
     heartbeat->transId = Transaction::INDEX::HEARTBEAT;
     transactions[heartbeat->transId] = heartbeat;
     this->heartbeat = heartbeat;

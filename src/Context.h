@@ -315,7 +315,7 @@ struct Context
     void switchToCandidate();
     void switchToFollower();
 
-    int getLastLogIndex()   { return this->logEntries.size() - 1; }
+    int getLastLogIndex()   { return static_cast<int>(this->logEntries.size() - 1); }
     int getLastLogTerm()    { return this->logEntries.back().termReceived; }
 };
 

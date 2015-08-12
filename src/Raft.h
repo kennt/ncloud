@@ -210,10 +210,9 @@ public:
     RaftHandler *    handler;
 
     Transaction(Log *log, Params *par, RaftHandler *handler)
-        : log(log), transId(0), term(0), handler(handler),
+        : log(log), par(par), transId(0), term(0), handler(handler),
         timeStart(-1), timeout(0), nTimeouts(1), lifetime(0)
     {
-        timeStart = par->getCurrtime();
     }
 
     virtual ~Transaction() {}
@@ -283,11 +282,9 @@ protected:
 
     Transaction::RESULT completed(bool success)
     {
-        close();
-        if (this->onCompleted) {
+        if (this->onCompleted)
             this->onCompleted(this, success);
-            this->onCompleted = nullptr;
-        }
+        close();
         return Transaction::RESULT::DELETE;
     }
 
