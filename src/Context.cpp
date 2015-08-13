@@ -30,6 +30,51 @@ void RaftLogEntry::read(istringstream& is)
     this->address = read_raw<Address>(is);
 }
 
+FileBasedContextStore::FileBasedContextStore(const char *filename)
+    : filename(filename)
+{
+    fs.open(filename, std::fstream::in |
+                      std::fstream::out |
+                      std::fstream::binary);
+}
+
+FileBasedContextStore::~FileBasedContextStore()
+{
+    fs.flush();
+    fs.close();
+}
+
+Json::Value FileBasedContextStore::read()
+{
+    Json::Value root;
+    fs.seekg(0, fs.beg);
+    fs >> root;
+    return root;
+}
+
+void FileBasedContextStore::write(const Json::Value& value)
+{
+    fs.seekp(0);    // seek to the beginning
+    fs << value;
+    fs.flush();
+}
+
+bool FileBasedContextStore::empty()
+{
+    fs.seekg(0, fs.end);
+    int length = fs.tellg();
+    return length == 0;
+}
+
+void FileBasedContextStore::reset()
+{
+    fs.close();
+    fs.open(filename, std::fstream::in |
+                      std::fstream::out |
+                      std::fstream::binary |
+                      std::fstream::trunc);
+}
+
 MemoryBasedContextStore::MemoryBasedContextStore(Params *par)
     : par(par)
 {}
@@ -160,6 +205,8 @@ void Context::addMember(const Address& address)
 {
     assert(this->lastAppliedIndex == (this->logEntries.size()-1));
 
+    auto node = this->handler->node();
+
     // Update the context entries (note that the entry has not
     // been persisted yet).
     RaftLogEntry    entry;
@@ -171,6 +218,11 @@ void Context::addMember(const Address& address)
     this->handler->applyLogEntry(entry);
     this->lastAppliedIndex++;
     assert(this->lastAppliedIndex == (this->logEntries.size() - 1));
+
+    this->followers[address] = 
+        LeaderStateEntry(node->context.getLastLogIndex()+1, 0);
+
+    setLogChanged(true);
 }
 
 void Context::removeMember(const Address& address)
@@ -186,6 +238,10 @@ void Context::removeMember(const Address& address)
     this->handler->applyLogEntry(entry);
     this->lastAppliedIndex++;
     assert(this->lastAppliedIndex == (this->logEntries.size() - 1));
+
+    this->followers.erase(address);
+
+    setLogChanged(false);
 }
 
 void Context::onTimeout()
@@ -225,6 +281,8 @@ void Context::addEntries(int startIndex, vector<RaftLogEntry> & entries)
     if (startIndex < 0 || startIndex > this->logEntries.size()) {
         throw AppException("Context log index out-of-range");
     }
+
+    this->setLogChanged(true);
 
     bool    rebuild = false;
     int     index = 0;
@@ -291,6 +349,8 @@ void Context::addEntries(int startIndex, vector<RaftLogEntry> & entries)
 
 void Context::applyCommittedEntries()
 {
+    this->setLogChanged(true);
+
     if (this->commitIndex > this->lastAppliedIndex) {
         for (int i=this->lastAppliedIndex; i<=this->commitIndex; i++) {
             // Apply log entries to match
@@ -314,6 +374,22 @@ void Context::switchToCandidate()
 void Context::switchToFollower()
 {
     this->currentState = State::FOLLOWER;
+}
+
+void Context::checkCommitIndex(int sentLogIndex)
+{
+    if (this->commitIndex >= sentLogIndex)
+        return;
+
+    // Check to see if we have a possible new commit index
+    int total = 0;
+    for (const auto & elem : this->followers) { 
+        if (elem.second.matchIndex >= sentLogIndex)
+            total++;
+    }
+    if (2*total > this->followers.size()) {
+        this->commitIndex = sentLogIndex;
+    }
 }
 
 void SanityTestLog::validateLogEntries(const vector<RaftLogEntry>& entries,
@@ -354,3 +430,4 @@ void SanityTestLog::validateLogEntries(const vector<RaftLogEntry>& entries,
         }
     }
 }
+

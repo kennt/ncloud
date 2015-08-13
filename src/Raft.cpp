@@ -215,24 +215,28 @@ Transaction::RESULT ElectionTimeoutTransaction::onTimeout()
     return Transaction::RESULT::KEEP;
 }
 
-void HeartbeatTimeoutTransaction::sendGroupUpdate()
+// Sends an AppendEntries message to all nodes.  Replies
+// don't really matter here.  Updates are performed through
+// a different mechanism.
+//$ TODO: could this be used for failure detection?
+void HeartbeatTimeoutTransaction::sendGroupHeartbeat()
 {
     auto node = getNetworkNode();
-    auto update = make_shared<GroupUpdateTransaction>(
-                    this->log, this->par, this->handler);
-    update->transId = this->handler->getNextMessageId();
-    update->term = node->context.currentTerm;
 
-    update->init(node->member,
-                 node->context.getLastLogIndex(),
-                 node->context.getLastLogTerm());
-    update->startTimeout(par->idleTimeout);
-    update->start();
+    AppendEntriesMessage message;
+    message.transId = this->handler->getNextMessageId();
+    message.term = node->context.currentTerm;
+    message.leaderAddress = this->handler->address();
+    message.prevLogIndex = node->context.getLastLogIndex();
+    message.prevLogTerm = node->context.getLastLogTerm();
+    message.leaderCommit = node->context.commitIndex;
+
+    this->handler->broadcast(&message);
 }
 
 void HeartbeatTimeoutTransaction::start()
 {
-    sendGroupUpdate();
+    sendGroupHeartbeat();
 }
 
 void HeartbeatTimeoutTransaction::close()
@@ -248,7 +252,7 @@ Transaction::RESULT HeartbeatTimeoutTransaction::onReply(const RawMessage *raw)
 
 Transaction::RESULT HeartbeatTimeoutTransaction::onTimeout()
 {
-    sendGroupUpdate();
+    sendGroupHeartbeat();
     return Transaction::RESULT::KEEP;
 }
 
@@ -338,6 +342,11 @@ Transaction::RESULT UpdateTransaction::onReply(const RawMessage *raw)
     reply.load(raw);
 
     if (reply.success) {
+        node->context.followers[raw->fromAddress].matchIndex = lastSentLogIndex;
+        node->context.followers[raw->fromAddress].nextIndex = lastSentLogIndex+1;
+
+        node->context.checkCommitIndex(lastSentLogIndex);
+
         // Are we all caught up?
         if (lastLogIndex == lastSentLogIndex)
             return completed(true);
@@ -347,6 +356,7 @@ Transaction::RESULT UpdateTransaction::onReply(const RawMessage *raw)
         // Resend, moving down the log
         if (this->lastSentLogIndex == 0)
             return completed(false);
+        node->context.followers[raw->fromAddress].nextIndex -= 1;
         sendAppendEntriesRequest(this->lastSentLogIndex-1);
     }
     return Transaction::RESULT::KEEP;
@@ -372,6 +382,10 @@ void UpdateTransaction::sendAppendEntriesRequest(int index)
 {
     auto node = getNetworkNode();
 
+    // Pick the smaller of nextIndex and the target
+    if (index > node->context.followers[recipient].nextIndex)
+        index = node->context.followers[recipient].nextIndex;
+
     AppendEntriesMessage append;
     append.transId = this->transId;
     append.term = node->context.currentTerm;
@@ -394,16 +408,20 @@ void UpdateTransaction::sendAppendEntriesRequest(int index)
 
 void GroupUpdateTransaction::init(const MemberInfo& member, int lastIndex, int lastTerm)
 {
-    for (auto & elem : member.memberList) {
-        recipients.push_back(elem.address);
-    }
-    this->lastLogIndex = lastIndex;
-    this->lastLogTerm = lastTerm;
+    vector<Address> members;
+    for (auto & elem : member.memberList)
+        members.push_back(elem.address);
+    this->init(members, lastIndex, lastTerm);
 }
 
 void GroupUpdateTransaction::init(const vector<Address>& members, int lastIndex, int lastTerm)
 {
-    recipients = members;
+    auto node = getNetworkNode();
+
+    for (auto & address : members) {
+        if (lastIndex >= node->context.followers[address].nextIndex)
+            recipients.push_back(address);
+    }
     this->lastLogIndex = lastIndex;
     this->lastLogTerm = lastTerm;
 }
@@ -424,9 +442,6 @@ void GroupUpdateTransaction::start()
 {
     auto node = getNetworkNode();
     
-    assert(std::count(recipients.begin(), recipients.end(),
-                      this->handler->address()) == 1);
-
     totalVotes = static_cast<int>(recipients.size());
     successVotes = failureVotes = 0;
 
@@ -855,16 +870,13 @@ void RaftHandler::onAddServerCommand(shared_ptr<CommandMessage> command, const A
 
     shared_ptr<CommandMessage>  reply;
 
-    //$ TODO: check to see that we are not in the middle
-    // of some other membership change.  Only one change allowed
-    // at a time.
-
     if (node->context.currentState != State::LEADER) {
         reply = command->makeReply(false);
         reply->address = node->context.currentLeader;   // send back the leader
         reply->errmsg = "not the leader";
     }
     else if (this->memberchange) {
+        // Only one member change operation allowed at a time
         reply = command->makeReply(false);
         reply->address = node->context.currentLeader;
         reply->errmsg = "Add/RemoveServer in progress, this operation is not allowed";
@@ -951,6 +963,27 @@ void RaftHandler::onTimeout()
     // changes within the context).
     node->context.onTimeout();
 
+    if (node->context.currentState == State::LEADER) {
+        // Check to see if we have to send out log updates
+        if (node->context.logChanged() || currtime > (this->lastUpdate + par->idleTimeout)) {
+            // Start up a group update
+            auto update = make_shared<GroupUpdateTransaction>(
+                            this->log, this->par, this);
+            update->transId = this->getNextMessageId();
+            update->term = node->context.currentTerm;
+            update->init(node->member,
+                         node->context.getLastLogIndex(),
+                         node->context.getLastLogTerm());
+            update->start();
+
+            update->startTimeout(par->idleTimeout);
+            this->addTransaction(update);
+
+            node->context.setLogChanged(false);
+
+            lastUpdate = par->getCurrtime();
+        }
+    }
 }
 
 // The actual Raft state machine (for our application) is

@@ -191,8 +191,6 @@ public:
 // The base transaction class (below), supports basic timeout handling.
 // In Raft, RPCs are long-lived and can stay alive indefinitely.
 //
-// The onTimeout() callback is only called when the timeout is non-zero.
-//
 class Transaction
 {
 public:
@@ -259,7 +257,12 @@ public:
         this->lifetime = par->getCurrtime() + lifetime;
     }
 
-    // Call this function, when the function has completed or timed out.
+    // This function will be called upon completion of the transaction.
+    // "Completion" usually means that a decision point has been reached.
+    // So for elections, it will be called when a majority of replies has
+    // been received (not necessarily when ALL of the replies have been
+    // received).  It will also be called when the lifttime limit has been
+    // reached.
     std::function<void (Transaction *trans, bool success)> onCompleted;
 
 protected:
@@ -325,7 +328,7 @@ public:
     virtual Transaction::RESULT onTimeout() override;
 
 protected:
-    void sendGroupUpdate();
+    void sendGroupHeartbeat();
 };
 
 // Use this to monitor the vote for a SINGLE follower.
@@ -523,7 +526,7 @@ public:
                 shared_ptr<NetworkNode> netnode,
                 shared_ptr<IConnection> connection)
         : log(log), par(par), store(store), netnode(netnode),
-            connection_(connection), nextMessageId(0)
+            connection_(connection), lastUpdate(0), nextMessageId(0)
     {
     };
 
@@ -614,6 +617,7 @@ protected:
     ContextStoreInterface * store;
     weak_ptr<NetworkNode>   netnode;
     shared_ptr<IConnection> connection_;
+    int                     lastUpdate;
 
     // This can be built from the log by executing all
     // of the log entries.

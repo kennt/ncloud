@@ -35,6 +35,7 @@ int main(int argc, char *argv[])
 }
 
 Application::Application() :
+    store("raft.log"),
     joinAddress(COORDINATOR_IP, MEMBER_PROTOCOL_PORT)
 {
     log = nullptr;
@@ -70,7 +71,8 @@ void Application::init(const char *filename)
 
         auto networknode = make_shared<NetworkNode>(name, log, par, network);
         auto connection = network->create(addr);
-        auto rafthandler = make_shared<Raft::RaftHandler>(log, par, networknode, connection);
+        auto rafthandler = make_shared<Raft::RaftHandler>(log, par, &store,
+                                networknode, connection);
 
         networknode->registerHandler(ConnectType::MEMBER,
                                      connection, rafthandler);

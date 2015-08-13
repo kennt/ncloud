@@ -331,9 +331,11 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
         append.load(raw.get());
         REQUIRE(append.term == 1);
         REQUIRE(append.prevLogTerm == 0);
-        REQUIRE(append.prevLogIndex == 1);
-        REQUIRE(append.entries.size() == 0);
+        REQUIRE(append.prevLogIndex == 0);
+        REQUIRE(append.entries.size() == 1);
         REQUIRE(append.leaderCommit == 1);
+
+        // Check the data
 
         // Send a reply
         AppendEntriesReply reply;
@@ -344,11 +346,6 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
         mockconn->send(raw.get());
 
         runMessageLoop(netnode, par, 1);
-
-        // Receive appendEntries with data
-        raw = mockconn->recv(0);
-        REQUIRE(raw.get() != nullptr);
-        append.load(raw.get());
 
         // Send a reply
 

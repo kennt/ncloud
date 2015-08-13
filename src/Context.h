@@ -137,13 +137,10 @@ public:
 
 // ==================
 // Provides the basic interface to store the context
-// to a file in the filesystem.  This will overwrite the 
-// entirety of the file contents, it does not do an append.
+// to a file in the filesystem.
 //
-//$ TODO: check, should this be doing a file append?  What
-// happens if the file write fails?  Is it better to have
-// the old context or an entirely blank context on startup?
-//
+//$ TODO: Right now this doe a full overwrite of the log instead
+// of just appending.
 // ==================
 class FileBasedContextStore : public ContextStoreInterface
 {
@@ -155,6 +152,10 @@ public:
     virtual void write(const Json::Value& value) override;
     virtual bool empty() override;
     virtual void reset() override;
+
+protected:
+    std::string     filename;
+    std::fstream    fs;
 };
 
 // ==================
@@ -206,7 +207,8 @@ struct Context
     Context(Log *log, Params *par) : par(par), log(log),
         handler(nullptr), store(nullptr), 
         currentState(State::NONE),
-        commitIndex(0), lastAppliedIndex(0), currentTerm(0)
+        commitIndex(0), lastAppliedIndex(0), currentTerm(0),
+        logChanged_(false)
     {}
 
     void init(RaftHandler *handler,
@@ -268,6 +270,7 @@ struct Context
     // This is due to Raft starting its log index at 1 (this is to avoid
     // confusion).    
     vector<RaftLogEntry>    logEntries;
+    bool                    logChanged_;
 
     // Serialization APIs
     void saveToStore();
@@ -289,9 +292,13 @@ struct Context
 
         LeaderStateEntry() : nextIndex(0), matchIndex(0)
         {}
+        LeaderStateEntry(int next, int match)
+            : nextIndex(next), matchIndex(match)
+        {}
     };
 
     std::unordered_map<Address, LeaderStateEntry> followers;
+
 
     // APIs for context manipulation
     void addMember(const Address& address);
@@ -317,6 +324,15 @@ struct Context
 
     int getLastLogIndex()   { return static_cast<int>(this->logEntries.size() - 1); }
     int getLastLogTerm()    { return this->logEntries.back().termReceived; }
+
+    // Use this to trigger sending of log updates
+    bool logChanged() const { return logChanged_; }
+    void setLogChanged(bool val) { logChanged_ = val; }
+
+    // Check to see if the commitIndex needs to be updated.
+    // Call this whenever a change is made to any of the matchIndex
+    // values
+    void checkCommitIndex(int sentLogIndex);
 };
 
 

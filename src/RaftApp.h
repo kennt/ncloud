@@ -18,7 +18,7 @@
 #include "Log.h"
 #include "Params.h"
 #include "NetworkNode.h"
-#include "MP1.h"
+#include "Raft.h"
 
 
 const int   ARGS_COUNT = 2;
@@ -46,6 +46,7 @@ protected:
     Log *                   log;
     vector<shared_ptr<NetworkNode>> nodes;
     Params *                par;
+    Raft::FileBasedContextStore   store;
 
     // The address of the coordinator node
     Address                 joinAddress;
