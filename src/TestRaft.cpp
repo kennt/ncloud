@@ -51,6 +51,10 @@ void sendAppendEntries(shared_ptr<IConnection> conn,
     conn->send(raw.get());
 }
 
+// Initializes the store with the data to start up
+// a node with the specified cluster configuration.
+// The leader gets added at term 0.  All other nodes
+// are added at term 1 by default.
 void initializeStore(Raft::ContextStoreInterface& store,
                      const Address& leader,
                      const vector<Address>& nodes)
@@ -94,17 +98,17 @@ void initializeStore(Raft::ContextStoreInterface& store,
 // Parameters
 //  par
 //  store - the context store to use for the node
+//      To setup the store for a mulit-node cluster,
+//      use initializeStore().
 //  leaderAddr - the address of the startup leader
 //      may be the same as nodeAddr
 //  nodeAddr - the main node that will be created
-//  otherAddr - a vector of other simulated nodes
-//      in the cluster (only used if we are a leader
-//      node).
-//  runStartup - set this to false if we are to setup
-//      the initial nodes (but not to actually run
-//      through the timeouts).
 //
-// This will then simulate the startup process.
+// Returns: a tuple
+//  <0> : shared pointer to the MockNetwork
+//  <1> : shared pointer to the NetworkNode
+//  <2> : shared pointer to the RaftHandler
+//
 std::tuple<shared_ptr<MockNetwork>, shared_ptr<NetworkNode>, shared_ptr<RaftHandler>> 
 createNode(Params *par,
            Raft::ContextStoreInterface *store,
@@ -131,7 +135,7 @@ createNode(Params *par,
 TEST_CASE("Raft state testing", "[raft][state]")
 {
     Params *    par = new Params();
-    Address     leaderAddr(0x64656667, 8000);
+    Address     leaderAddr(0x64656667, 9000);
     Address     nodeAddr(0x64656667, 8100);
 
     // Setup the timeouts
@@ -168,7 +172,7 @@ TEST_CASE("Raft state testing", "[raft][state]")
         Raft::MemoryBasedContextStore store(par);
         vector<Address> nodes;
         nodes.push_back(nodeAddr);
-        nodes.emplace_back(0x64656667, 9010);
+        nodes.emplace_back(0x64656667, 8200);
 
         initializeStore(store, leaderAddr, nodes);
 
@@ -197,14 +201,134 @@ TEST_CASE("Raft state testing", "[raft][state]")
     }
 
     // Candidate (receive majority vote) -> leader
-    // Candidate (discovers new leader or term) -> follower
-    // Leader (discovers server with higher term) -> follower
+    SECTION("Candiate (receives majority vote) -> leader") {
+        Raft::MemoryBasedContextStore store(par);
+        vector<Address> nodes;
+        nodes.push_back(nodeAddr);
+        nodes.emplace_back(0x64656667, 8200);
+
+        initializeStore(store, leaderAddr, nodes);
+
+        auto nettuple = createNode(par,
+                                   &store,
+                                   leaderAddr,
+                                   nodeAddr);
+        auto network = std::get<0>(nettuple);
+        auto netnode = std::get<1>(nettuple);
+        auto mockconn = network->findMockConnection(nodeAddr);
+        network->create(nodes[1]);
+        auto mockconn2 = network->findMockConnection(nodes[1]);
+
+        network->flush();
+        runMessageLoop(netnode, par, 0);
+
+        REQUIRE(netnode->context.currentState == State::FOLLOWER);
+
+        runMessageLoop(netnode, par, par->getElectionTimeout());
+
+        REQUIRE(netnode->context.currentState == State::CANDIDATE);  
+        REQUIRE(netnode->context.currentTerm == 2);      
+
+        // There are three nodes : leader and two followers
+        // There should be two request votes
+        // one reply should be enough for a majority
+        REQUIRE(mockconn->messagesSent == 2);
+
+        // RequestVote : node --> other node
+        auto raw = mockconn2->recv(0);
+        HeaderOnlyMessage   header;
+        RequestVoteMessage  request;
+        REQUIRE(raw != nullptr);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::REQUEST_VOTE);
+        request.load(raw.get());
+        REQUIRE(request.term == 2);
+        REQUIRE(request.candidate == nodeAddr);
+        REQUIRE(request.lastLogIndex == 3);
+        REQUIRE(request.lastLogTerm == 1);
+
+        // RequestVoteReply : other node --> node
+        RequestVoteReply    reply;
+        reply.transId = request.transId;
+        reply.term = 1;
+        reply.voteGranted = true;
+        raw = reply.toRawMessage(nodes[1], nodeAddr);
+        mockconn2->send(raw.get());
+
+        REQUIRE(netnode->context.currentState == State::CANDIDATE);  
+
+        runMessageLoop(netnode, par, 0);
+
+        REQUIRE(netnode->context.currentState == State::LEADER);
+    }
+
+    SECTION("Candidate (discovers new leader or term) -> follower") {
+        Raft::MemoryBasedContextStore store(par);
+        vector<Address> nodes;
+        nodes.push_back(nodeAddr);
+        nodes.emplace_back(0x64656667, 8200);
+
+        initializeStore(store, leaderAddr, nodes);
+
+        auto nettuple = createNode(par,
+                                   &store,
+                                   leaderAddr,
+                                   nodeAddr);
+        auto network = std::get<0>(nettuple);
+        auto netnode = std::get<1>(nettuple);
+        auto mockconn = network->findMockConnection(nodeAddr);
+        network->create(nodes[1]);
+        auto mockconn2 = network->findMockConnection(nodes[1]);
+
+        network->flush();
+        runMessageLoop(netnode, par, 0);
+
+        REQUIRE(netnode->context.currentState == State::FOLLOWER);
+
+        runMessageLoop(netnode, par, par->getElectionTimeout());
+
+        REQUIRE(netnode->context.currentState == State::CANDIDATE);  
+        REQUIRE(netnode->context.currentTerm == 2);      
+
+        // This should cause the node to fall back to a follower
+        sendAppendEntries(mockconn2, nodeAddr,
+                          1 /*transid*/, 3 /*term*/, leaderAddr,
+                          1 /*index*/, 0 /*term*/, 1 /*commit*/);
+        runMessageLoop(netnode, par, 0);
+
+        REQUIRE(netnode->context.currentState == State::FOLLOWER);
+    }
+
+    SECTION("Leader (discovers server with higher term) -> follower") {
+        Raft::MemoryBasedContextStore store(par);
+
+        auto nettuple = createNode(par,
+                                   &store,
+                                   leaderAddr,
+                                   leaderAddr);
+        auto network = std::get<0>(nettuple);
+        auto netnode = std::get<1>(nettuple);
+        auto rafthandler = std::get<2>(nettuple);
+        auto conn = network->create(nodeAddr);
+
+        par->resetCurrtime();
+        network->reset();
+
+        // Run through the election timeout
+        runMessageLoop(netnode, par, par->getElectionTimeout());
+        REQUIRE(netnode->context.currentState == Raft::State::LEADER);
+
+        sendAppendEntries(conn, leaderAddr,
+                          1 /*transid*/, 3 /*term*/, leaderAddr,
+                          1 /*index*/, 0 /*term*/, 1 /*commit*/);
+        runMessageLoop(netnode, par, 0);
+
+        REQUIRE(netnode->context.currentState == State::FOLLOWER);
+    }
 }
 
 TEST_CASE("Raft single-node startup", "[raft][startup]")
 {
-    string  name("mock");
-    // Create a mock test network
     Params *    par = new Params();
     Address     myAddr(0x64656667, 8080); // 100.101.102.103:8080
     Address     leaderAddr(0x64656667, 9000); // 100.101.102.103:9000
@@ -302,6 +426,7 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
         REQUIRE(mockconn->messagesSent == 0);
 
         // Have the leader "contact" the node via an append entries RPC.
+        // AppendEntries : leader --> node
         sendAppendEntries(leaderconn, myAddr,
                           1 /*transid*/, 1 /*term*/, leaderAddr,
                           1 /*index*/, 0 /*term*/, 1 /*commit*/);
@@ -316,6 +441,7 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
         REQUIRE(mockconn->messagesSent == 1);
 
         // Pull the message off of the connection and check it
+        // AppendEntriesReply : node --> leader
         auto recvMessage = leaderconn->recv(0);
         REQUIRE(recvMessage);
 

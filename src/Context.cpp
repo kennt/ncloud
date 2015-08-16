@@ -154,6 +154,7 @@ void Context::loadFromStore()
         root.get("votedFor", "0.0.0.0").asString().c_str(), port);
 
     this->logEntries.clear();   // reset the log
+    this->logEntries.emplace_back(); // add dummy first entry
     Json::Value log = root["log"];
     for (int i=0; i<log.size(); i++) {
         RaftLogEntry    entry;
@@ -249,7 +250,6 @@ void Context::startElection(const MemberInfo& member)
 
     this->handler->addTransaction(election);
 
-    //$ TODO: add a random timeout to the election timeout
     election->startTimeout(par->getElectionTimeout());
 }
 

@@ -279,7 +279,7 @@ void ElectionTransaction::start()
     auto node = getNetworkNode();
 
     RequestVoteMessage request;
-    request.transId = this->handler->getNextMessageId();
+    request.transId = this->transId;
     request.term = node->context.currentTerm;
     request.candidate = this->handler->address();
     request.lastLogIndex = node->context.getLastLogIndex();
