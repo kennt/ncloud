@@ -465,7 +465,7 @@ void GroupUpdateTransaction::start()
 
         update->start();
         //$ TODO: what should this timeout be?
-        update->startTimeout(par->electionTimeout);;
+        update->startTimeout(par->getElectionTimeout());;
 
         this->activeChildren[update->transId] = update;
         this->handler->addTransaction(update);
@@ -613,7 +613,7 @@ void MemberChangeTransaction::onServerUpdateCompleted(Transaction *trans,
             this->currentTrans = update;
             this->handler->addTransaction(update);
     
-            update->setLifetime(par->getCurrtime() + 5*par->electionTimeout);
+            update->setLifetime(par->getCurrtime() + 5*par->getElectionTimeout());
     
             update->start();
         }
@@ -663,7 +663,7 @@ void MemberChangeTransaction::onPrevConfigCompleted(Transaction *trans,
 
         update->start();        
 
-        update->setLifetime(par->getCurrtime() + 5*par->electionTimeout);
+        update->setLifetime(par->getCurrtime() + 5*par->getElectionTimeout());
     }
     else {
         completed(false);
@@ -741,7 +741,7 @@ void RaftHandler::start(const Address &leader)
     }
 
     // Start the election timeout
-    this->election->startTimeout(par->electionTimeout);
+    this->election->startTimeout(par->getElectionTimeout());
 }
 
 // This is a callback and is called when the connection has received
@@ -929,7 +929,7 @@ void RaftHandler::onChangeServerCommand(shared_ptr<CommandMessage> command, cons
         // Get this started!
         trans->start();
         //$ TODO: what should the overall timeout be here?
-        trans->startTimeout(5*par->electionTimeout);
+        trans->startTimeout(5*par->getElectionTimeout());
     }
 
     if (reply) {
@@ -1135,7 +1135,7 @@ void RaftHandler::onCompletedElection(Transaction *trans, bool success)
 
         //$ TODO: what should the timeout be here?
         // this is the lifetime timeout
-        update->startTimeout(5*par->electionTimeout);
+        update->startTimeout(5*par->getElectionTimeout());
     }
     else {
         // try again

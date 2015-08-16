@@ -250,7 +250,7 @@ void Context::startElection(const MemberInfo& member)
     this->handler->addTransaction(election);
 
     //$ TODO: add a random timeout to the election timeout
-    election->startTimeout(par->electionTimeout);
+    election->startTimeout(par->getElectionTimeout());
 }
 
 void Context::addEntries(int startIndex, vector<RaftLogEntry> & entries)

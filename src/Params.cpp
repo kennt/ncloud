@@ -26,6 +26,7 @@ Params::Params():
     singleFailure(false),
     CRUDTestType(TEST_TYPE::NONE),
     electionTimeout(0),
+    electionTimeoutModifier(0),
     idleTimeout(0),
     rpcTimeout(0),
     globaltime(0)
@@ -67,6 +68,7 @@ void Params::load(const char *config_file) {
         numberOfNodes = maxNumberOfNeighbors;
 
         electionTimeout = root.get("electionTimeout", 0).asInt();
+        electionTimeoutModifier = root.get("electionTimeoutModifier", 0).asInt();
         idleTimeout = root.get("idleTimeout", 0).asInt();
         rpcTimeout = root.get("rpcTimeout", 0).asInt();
     }

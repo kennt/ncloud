@@ -158,7 +158,7 @@ TEST_CASE("Raft state testing", "[raft][state]")
 
         REQUIRE(netnode->context.currentState == State::FOLLOWER);
 
-        runMessageLoop(netnode, par, par->electionTimeout);
+        runMessageLoop(netnode, par, par->getElectionTimeout());
 
         REQUIRE(netnode->context.currentState == State::CANDIDATE);
     }
@@ -184,13 +184,13 @@ TEST_CASE("Raft state testing", "[raft][state]")
 
         REQUIRE(netnode->context.currentState == State::FOLLOWER);
 
-        runMessageLoop(netnode, par, par->electionTimeout);
+        runMessageLoop(netnode, par, par->getElectionTimeout());
 
         REQUIRE(netnode->context.currentState == State::CANDIDATE);  
         REQUIRE(netnode->context.currentTerm == 2);      
 
         // The election should timeout and move to a new term
-        runMessageLoop(netnode, par, par->electionTimeout);
+        runMessageLoop(netnode, par, par->getElectionTimeout());
 
         REQUIRE(netnode->context.currentState == State::CANDIDATE);  
         REQUIRE(netnode->context.currentTerm == 3);
@@ -260,7 +260,7 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
         // Note that the check occurs on election timeout (we would
         // check during receiving a vote, but there are no other nodes,
         // thus no other votes).
-        runMessageLoop(netnode, par, par->electionTimeout);
+        runMessageLoop(netnode, par, par->getElectionTimeout());
 
         // Election won, should be a leader      
         REQUIRE(netnode->context.currentState == Raft::State::LEADER);
@@ -416,7 +416,7 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
         network->reset();
 
         // Run through the election timeout
-        runMessageLoop(netnode, par, par->electionTimeout);
+        runMessageLoop(netnode, par, par->getElectionTimeout());
         REQUIRE(netnode->context.currentState == Raft::State::LEADER);
 
         // Call through the onAddServerCommand()

@@ -68,6 +68,13 @@ public:
     // Timeout before starting a new election
     int     electionTimeout;
 
+    // Will add this to the election timeout. In practice, this
+    // should be generated randomly. We do this here so that we
+    // can test in a deterministic way.
+    int     electionTimeoutModifier;
+
+    int     getElectionTimeout() { return electionTimeout + electionTimeoutModifier; }
+
     // Idle timeout, this it the length of time between
     // idle periods.  This should be less than the electionTimeout
     // so that we are sure to send out heartbeats to prevent
