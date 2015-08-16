@@ -128,6 +128,9 @@ public:
     // a just-initialized network.
     void reset();
 
+    // Internal API, flushes all waiting messages
+    void flush();
+
     // This should be protected/private, do not use this constructor.
     MockNetwork(Params *par)
     {

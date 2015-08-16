@@ -191,7 +191,8 @@ public:
 // The base transaction class (below), supports basic timeout handling.
 // In Raft, RPCs are long-lived and can stay alive indefinitely.
 //
-class Transaction
+class Transaction : public std::enable_shared_from_this<Transaction>
+
 {
 public:
     enum class RESULT { KEEP=0, DELETE };
@@ -263,7 +264,12 @@ public:
     // been received (not necessarily when ALL of the replies have been
     // received).  It will also be called when the lifttime limit has been
     // reached.
+    //
+    // The parent transaction pointer is used when the onCompleted
+    // function is a member of a parent transaction. This is to ensure that
+    // the object is alive while the callback is in place.
     std::function<void (Transaction *trans, bool success)> onCompleted;
+    shared_ptr<Transaction> parent;
 
 protected:
     // The timeout callback will be called when
@@ -419,6 +425,8 @@ public:
         lastLogIndex(0), lastLogTerm(0),
         totalVotes(0), successVotes(0), failureVotes(0)
     {}
+    virtual ~GroupUpdateTransaction()
+    {}
 
     void init(const MemberInfo& member, int lastIndex, int lastTerm);
     void init(const vector<Address> &members, int lastIndex, int lastTerm);
@@ -468,6 +476,8 @@ public:
         : Transaction(log, par, handler),
         lastLogTerm(0), lastLogIndex(0)
     {}
+    virtual ~MemberChangeTransaction()
+    {}
 
     // The address of the server being added/deleted
     Address     server;
@@ -491,8 +501,9 @@ protected:
     vector<Address>     recipients;
 
     // The current operation begin performed (depends on
-    // where we are in the process).
-    shared_ptr<Transaction> currentTrans;
+    // where we are in the process). This is a weak_ptr because
+    // the child transaction will have a shared_ptr on this.
+    weak_ptr<Transaction>   currentTrans;
 
     // This gets called upon completion of the first step, the
     // update of the target server (this step is not needed when removing).
@@ -565,8 +576,7 @@ public:
 
     // Handlers for command messages
     // i.e. those messages received via JSON command messages
-    void onAddServerCommand(shared_ptr<CommandMessage> command, const Address& address);
-    void onRemoveServerCommand(shared_ptr<CommandMessage> command, const Address& address);
+    void onChangeServerCommand(shared_ptr<CommandMessage> command, const Address& address);
 
     // Transaction support
     shared_ptr<Transaction> findTransaction(int transid);

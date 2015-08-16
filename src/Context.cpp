@@ -62,7 +62,7 @@ void FileBasedContextStore::write(const Json::Value& value)
 bool FileBasedContextStore::empty()
 {
     fs.seekg(0, fs.end);
-    int length = fs.tellg();
+    auto length = fs.tellg();
     return length == 0;
 }
 
@@ -143,7 +143,7 @@ void Context::loadFromStore()
     // Read in currentLeader, currentTerm, votedForAddress
     // and log entries
     unsigned short port;
-    port = root.get("leaderPort", 0).asInt();
+    port = root.get("currentLeaderPort", 0).asInt();
     this->currentLeader.parse(
         root.get("currentLeader", "0.0.0.0").asString().c_str(), port);
 
@@ -181,9 +181,11 @@ void Context::saveToStore()
 
     Json::Value root;
 
-    root["currentLeader"] = this->currentLeader.toString();
+    root["currentLeader"] = this->currentLeader.toAddressString();
+    root["currentLeaderPort"] = this->currentLeader.getPort();
     root["currentTerm"] = this->currentTerm;
-    root["votedFor"] = this->votedFor.toString();
+    root["votedFor"] = this->votedFor.toAddressString();
+    root["votedForPort"] = this->votedFor.getPort();
 
     Json::Value log;
     for (auto & entry: this->logEntries) {
@@ -199,9 +201,7 @@ void Context::saveToStore()
     store->write(root);
 }
 
-// Adds a member to the membership list.  This will also
-// take care of all the necessary log-related activites.
-void Context::addMember(const Address& address)
+void Context::changeMembership(Command cmd, const Address& address)
 {
     assert(this->lastAppliedIndex == (this->logEntries.size()-1));
 
@@ -211,37 +211,15 @@ void Context::addMember(const Address& address)
     // been persisted yet).
     RaftLogEntry    entry;
     entry.termReceived = this->currentTerm;
-    entry.command = CMD_ADD_SERVER;
+    entry.command = cmd;
     entry.address = address;
 
     this->logEntries.push_back(entry);
     this->handler->applyLogEntry(entry);
     this->lastAppliedIndex++;
     assert(this->lastAppliedIndex == (this->logEntries.size() - 1));
-
-    this->followers[address] = 
-        LeaderStateEntry(node->context.getLastLogIndex()+1, 0);
 
     setLogChanged(true);
-}
-
-void Context::removeMember(const Address& address)
-{
-    // Update the context entries (note that the entry has not
-    // been persisted yet).
-    RaftLogEntry    entry;
-    entry.termReceived = this->currentTerm;
-    entry.command = CMD_REMOVE_SERVER;
-    entry.address = address;
-
-    this->logEntries.push_back(entry);
-    this->handler->applyLogEntry(entry);
-    this->lastAppliedIndex++;
-    assert(this->lastAppliedIndex == (this->logEntries.size() - 1));
-
-    this->followers.erase(address);
-
-    setLogChanged(false);
 }
 
 void Context::onTimeout()
@@ -349,14 +327,13 @@ void Context::addEntries(int startIndex, vector<RaftLogEntry> & entries)
 
 void Context::applyCommittedEntries()
 {
-    this->setLogChanged(true);
-
     if (this->commitIndex > this->lastAppliedIndex) {
         for (int i=this->lastAppliedIndex; i<=this->commitIndex; i++) {
             // Apply log entries to match
             this->handler->applyLogEntry(this->logEntries[i]);
         }
         this->lastAppliedIndex = this->commitIndex;
+        this->setLogChanged(true);
     }
 }
 

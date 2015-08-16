@@ -57,6 +57,16 @@ void CommandMessage::load(const RawMessage *raw)
                     static_cast<unsigned short>(root.get("port", 0).asInt()));
             }
             break;
+        case CommandType::CREPLY:
+            {
+                this->replytype = static_cast<CommandType>(root.get("replytype", 0).asInt());
+                this->success = root.get("success", false).asBool();
+                this->errmsg = root.get("errmsg", "").asString();
+                this->address.parse(
+                    root.get("address", "0.0.0.0").asString().c_str(),
+                    static_cast<unsigned short>(root.get("port", 0).asInt()));
+            }
+            break;
         default:
             throw NetworkException(string_format("Unknown command message:%d", this->type).c_str());
             break;

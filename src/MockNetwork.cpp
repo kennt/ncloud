@@ -247,3 +247,9 @@ void MockNetwork::reset()
         elem.second->reset();
     }
 }
+
+void MockNetwork::flush()
+{
+    this->messages.clear();
+}
+

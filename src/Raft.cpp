@@ -1,3 +1,4 @@
+
 /*****
  * Raft.cpp
  *
@@ -168,7 +169,8 @@ void RequestVoteReply::load(const RawMessage *raw)
 
 void Transaction::close()
 {
-    onCompleted = nullptr;
+    this->onCompleted = nullptr;
+    this->parent = nullptr;
 }
 
 shared_ptr<NetworkNode> Transaction::getNetworkNode()
@@ -182,6 +184,7 @@ void ElectionTimeoutTransaction::start()
 
 void ElectionTimeoutTransaction::close()
 {
+    Transaction::close();
 }
 
 Transaction::RESULT ElectionTimeoutTransaction::onReply(const RawMessage *raw)
@@ -241,6 +244,7 @@ void HeartbeatTimeoutTransaction::start()
 
 void HeartbeatTimeoutTransaction::close()
 {
+    Transaction::close();
 }
 
 Transaction::RESULT HeartbeatTimeoutTransaction::onReply(const RawMessage *raw)
@@ -419,7 +423,10 @@ void GroupUpdateTransaction::init(const vector<Address>& members, int lastIndex,
     auto node = getNetworkNode();
 
     for (auto & address : members) {
-        if (lastIndex >= node->context.followers[address].nextIndex)
+        if (address == this->handler->address())
+            continue;
+
+        if (lastIndex >= node->context.followers[address].matchIndex)
             recipients.push_back(address);
     }
     this->lastLogIndex = lastIndex;
@@ -443,18 +450,17 @@ void GroupUpdateTransaction::start()
     auto node = getNetworkNode();
     
     totalVotes = static_cast<int>(recipients.size());
-    successVotes = failureVotes = 0;
+    successVotes = 1;       // for ourselves
+    failureVotes = 0;
 
     // Start all of the individual updates
     for (auto & address : recipients) {
-        if (address == this->handler->address())
-            continue;
-
         auto update = make_shared<UpdateTransaction>(log, par, handler);
         update->term = this->term;
         update->transId = this->handler->getNextMessageId();
         update->onCompleted = std::bind(&GroupUpdateTransaction::onChildCompleted,
                                         this, _1, _2);
+        update->parent = shared_from_this();
         update->init(address, this->lastLogIndex, this->lastLogTerm);
 
         update->start();
@@ -535,6 +541,7 @@ void MemberChangeTransaction::start()
 
     trans->onCompleted = std::bind(&MemberChangeTransaction::onServerUpdateCompleted,
                                    this, _1, _2);
+    trans->parent = shared_from_this();
 
     this->currentTrans = trans;
     this->handler->addTransaction(trans);
@@ -547,9 +554,10 @@ void MemberChangeTransaction::start()
 void MemberChangeTransaction::close()
 {
     Transaction::close();
-    if (currentTrans)
-        currentTrans->close();        
-    currentTrans = nullptr;
+    auto current = this->currentTrans.lock();
+    if (current)
+        current->close();
+    this->currentTrans.reset();
 }
 
 Transaction::RESULT MemberChangeTransaction::onReply(const RawMessage *raw)
@@ -571,10 +579,10 @@ Transaction::RESULT MemberChangeTransaction::onTimeout()
 void MemberChangeTransaction::onServerUpdateCompleted(Transaction *trans,
                                                       bool success)
 {
-    if (this->currentTrans) {
-        this->handler->removeTransaction(this->currentTrans->transId);
-        this->currentTrans = nullptr;
-    }
+    auto current = this->currentTrans.lock();
+    if (current)
+        this->handler->removeTransaction(current->transId);
+    this->currentTrans.reset();
 
     auto node = getNetworkNode();
 
@@ -584,23 +592,31 @@ void MemberChangeTransaction::onServerUpdateCompleted(Transaction *trans,
         // Add the current server to the config
         // (Note that we are still updating only up to the
         // previous configuration). 
-        this->handler->applyLogEntry(this->command, this->server);
-
-        // Update a majority of the servers to the configuration
-        // without the current config change.
-        auto update = make_shared<GroupUpdateTransaction>(log, par, handler);
-        update->transId = this->handler->getNextMessageId();
-        update->init(recipients, this->lastLogIndex, this->lastLogTerm);
-
-        this->onCompleted = std::bind(&MemberChangeTransaction::onPrevConfigCompleted,
-                                      this, _1, _2);
-
-        this->currentTrans = update;
-        this->handler->addTransaction(update);
-
-        update->setLifetime(par->getCurrtime() + 5*par->electionTimeout);
-
-        update->start();
+        //this->handler->applyLogEntry(this->command, this->server);
+        
+        // Shortcut: If there are no recipients go straight to the 
+        // next step in the operation.
+        if (recipients.size() == 0)
+            onPrevConfigCompleted(trans, true);
+        else {
+            // Update a majority of the servers to the configuration
+            // without the current config change.
+            auto update = make_shared<GroupUpdateTransaction>(log, par, handler);
+            update->term = node->context.currentTerm;
+            update->transId = this->handler->getNextMessageId();
+            update->init(this->recipients, this->lastLogIndex, this->lastLogTerm);
+    
+            update->onCompleted = std::bind(&MemberChangeTransaction::onPrevConfigCompleted,
+                                            this, _1, _2);
+            update->parent = shared_from_this();
+    
+            this->currentTrans = update;
+            this->handler->addTransaction(update);
+    
+            update->setLifetime(par->getCurrtime() + 5*par->electionTimeout);
+    
+            update->start();
+        }
     }
     else {
         // Step one failed, end this transaction
@@ -611,27 +627,36 @@ void MemberChangeTransaction::onServerUpdateCompleted(Transaction *trans,
 void MemberChangeTransaction::onPrevConfigCompleted(Transaction *trans,
                                                     bool success)
 {
-    if (this->currentTrans) {
-        this->handler->removeTransaction(this->currentTrans->transId);
-        this->currentTrans = nullptr;
-    }
+    auto current = this->currentTrans.lock();
+    if (current)
+        this->handler->removeTransaction(current->transId);
+    this->currentTrans.reset();
 
     auto node = getNetworkNode();
 
     if (success) {
         // next step, commit the current change (either add/remove)
-        this->handler->applyLogEntry(this->command, this->server);
+        node->context.changeMembership(this->command, this->server);
+
+        // Since we are the one's updating the log, no need to 
+        // have the timeout mechanism do it.
+        node->context.setLogChanged(false);
+
+        // Since the new server is now part of the local config,
+        // add it to the list of recipients for the update
+        this->recipients.push_back(this->server);
 
         // make the change
         auto update = make_shared<GroupUpdateTransaction>(log, par, handler);
         update->transId = this->handler->getNextMessageId();
 
-        update->init(recipients,
+        update->init(this->recipients,
                      node->context.getLastLogIndex(),
                      node->context.getLastLogTerm());
 
-        this->onCompleted = std::bind(&MemberChangeTransaction::onCommandUpdateCompleted,
-                                      this, _1, _2);
+        update->onCompleted = std::bind(&MemberChangeTransaction::onCommandUpdateCompleted,
+                                        this, _1, _2);
+        update->parent = shared_from_this();
 
         this->currentTrans = update;
         this->handler->addTransaction(update);
@@ -648,10 +673,10 @@ void MemberChangeTransaction::onPrevConfigCompleted(Transaction *trans,
 void MemberChangeTransaction::onCommandUpdateCompleted(Transaction *trans,
                                                        bool success)
 {
-    if (this->currentTrans) {
-        this->handler->removeTransaction(this->currentTrans->transId);
-        this->currentTrans = nullptr;
-    }
+    auto current = this->currentTrans.lock();
+    if (current)
+        this->handler->removeTransaction(current->transId);
+    this->currentTrans.reset();
 
     auto node = getNetworkNode();
 
@@ -700,7 +725,8 @@ void RaftHandler::start(const Address &leader)
 
         // IF we are the designated leader, then initialize
         // the log with our own membership.
-        node->context.addMember(connection()->address());
+        node->context.changeMembership(Command::CMD_ADD_SERVER,
+                                       connection()->address());
 
         // commit the membership list change
         node->context.saveToStore();
@@ -850,6 +876,9 @@ void RaftHandler::onReply(const Address&from,
     if (!trans)
         return;     // nothing to do here, cannot find transaction
 
+    auto node = getNetworkNode();
+    node->context.saveToStore();
+
     auto result = trans->onReply(raw);
     if (result == Transaction::RESULT::DELETE) {
         trans->close();
@@ -857,14 +886,12 @@ void RaftHandler::onReply(const Address&from,
     }
 }
 
-// This has to implement the same functionality as the regular
-// AddServer() but with the added responsibility of sending
-// a reply to the CommandMessage.
+// This implements the AddServer and RemoveServer command messages.
 //
 // We do not forward the request, just return a failed notification,
 // with the leader address in the address portion.
 //
-void RaftHandler::onAddServerCommand(shared_ptr<CommandMessage> command, const Address& address)
+void RaftHandler::onChangeServerCommand(shared_ptr<CommandMessage> command, const Address& address)
 {
     auto node = getNetworkNode();
 
@@ -890,7 +917,10 @@ void RaftHandler::onAddServerCommand(shared_ptr<CommandMessage> command, const A
         trans->lastLogIndex = node->context.getLastLogIndex();
         trans->lastLogTerm = node->context.getLastLogTerm();
         trans->server = address;
-        trans->command = Command::CMD_ADD_SERVER;
+        if (command->type == CommandType::CRAFT_ADDSERVER)
+            trans->command = Command::CMD_ADD_SERVER;
+        else
+            trans->command = Command::CMD_REMOVE_SERVER;
         trans->commandMessage = command;
 
         this->memberchange = trans;
@@ -907,30 +937,6 @@ void RaftHandler::onAddServerCommand(shared_ptr<CommandMessage> command, const A
         connection_->send(raw.get());
     }
 }
-
-void RaftHandler::onRemoveServerCommand(shared_ptr<CommandMessage> command, const Address& address)
-{
-    auto node = getNetworkNode();
-
-    shared_ptr<CommandMessage>  reply;
-
-    if (node->context.currentState != State::LEADER) {
-        reply = command->makeReply(false);
-
-        // Send back what we think is the leader
-        reply->address = node->context.currentLeader;
-        reply->errmsg = "not the leader";
-    }
-    else {
-        reply = command->makeReply(true);
-        node->context.removeMember(address);
-    }
-
-    // Send the reply
-    auto raw = reply->toRawMessage(connection_->address(), command->from);
-    connection_->send(raw.get());
-}
-
 
 // This is called when there are no messages available (usually on a
 // connection timeout).  Thus perform any actions that should be done
@@ -1006,16 +1012,13 @@ void RaftHandler::applyLogEntry(Command command,
             // Dummy command, just ignore
             break;
         case CMD_ADD_SERVER:
-            node->member.addToMemberList(
-                address,
-                par->getCurrtime(),
-                0);
-            node->context.followers.emplace(address,
-                                            Context::LeaderStateEntry());
+            node->member.addToMemberList(address, par->getCurrtime(), 0);
+            if (address != this->address())
+                node->context.followers[address] = 
+                    Context::LeaderStateEntry(node->context.getLastLogIndex()+1, 0);
             break;
         case CMD_REMOVE_SERVER:
-            node->member.removeFromMemberList(
-                address);
+            node->member.removeFromMemberList(address);
             node->context.followers.erase(address);
             break;
         case CMD_CLEAR_LIST:

@@ -49,19 +49,19 @@ socket: Log.o \
 		Command.o
 	g++ -o Application SocketApp.o Log.o Util.o SocketNetwork.o Params.o NetworkNode.o MP1.o MP2.o jsoncpp.o Member.o Ring.o Command.o ${CFLAGS}
 
-rafts: 	Log.o \
-		Util.o \
-		SocketNetwork.o \
-		Params.o \
-		NetworkNode.o \
-		RaftApp.o \
-		Raft.o \
-		MP2.o \
-		jsoncpp.o \
+rafts: 	RaftApp.o \
+		Command.o \
 		Context.o \
+		Log.o \
 		Member.o \
+		MP2.o \
+		NetworkNode.o \
+		Params.o \
+		Raft.o \
 		Ring.o \
-		Command.o
+		SocketNetwork.o \
+		Util.o \
+		jsoncpp.o
 	g++ -o Application RaftApp.o Log.o Util.o SocketNetwork.o Params.o NetworkNode.o Raft.o MP2.o jsoncpp.o Context.o Member.o Ring.o Command.o ${CFLAGS}
 
 raft: 	RaftApp.o \

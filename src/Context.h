@@ -301,8 +301,7 @@ struct Context
 
 
     // APIs for context manipulation
-    void addMember(const Address& address);
-    void removeMember(const Address& address);
+    void changeMembership(Command cmd, const Address& address);
 
     // Perform any actions/checking of the timeout
     void onTimeout();
