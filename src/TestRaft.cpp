@@ -29,8 +29,14 @@ void runMessageLoop(shared_ptr<NetworkNode> node, Params *par, int tm)
 void runMessageLoop(vector<shared_ptr<NetworkNode>>& nodes, Params *par, int tm)
 {
     for (auto & node : nodes) {
-        runMessageLoop(node, par, 1);
+        runMessageLoop(node, par, tm);
     }
+}
+
+void flushMessages(shared_ptr<IConnection> conn)
+{
+    while (conn->recv(0))
+        ;
 }
 
 void sendAppendEntries(shared_ptr<IConnection> conn,
@@ -101,6 +107,7 @@ void initializeStore(Raft::ContextStoreInterface& store,
 // nodeAddr must ALWAYS be supplied.
 //
 // Parameters
+//  network
 //  par
 //  store - the context store to use for the node
 //      To setup the store for a mulit-node cluster,
@@ -110,19 +117,17 @@ void initializeStore(Raft::ContextStoreInterface& store,
 //  nodeAddr - the main node that will be created
 //
 // Returns: a tuple
-//  <0> : shared pointer to the MockNetwork
-//  <1> : shared pointer to the NetworkNode
-//  <2> : shared pointer to the RaftHandler
+//  <0> : shared pointer to the NetworkNode
+//  <1> : shared pointer to the RaftHandler
 //
-std::tuple<shared_ptr<MockNetwork>, shared_ptr<NetworkNode>, shared_ptr<RaftHandler>> 
-createNode(Params *par,
+std::tuple<shared_ptr<NetworkNode>, shared_ptr<RaftHandler>> 
+createNode(shared_ptr<MockNetwork> network,
+           Params *par,
            Raft::ContextStoreInterface *store,
            const Address& leaderAddr,
            const Address& nodeAddr)
 {
     string  name("mock");
-    auto network = MockNetwork::createNetwork(par);
-
     auto conn = network->create(nodeAddr);
     auto netnode = make_shared<NetworkNode>(name, nullptr, par, network);
     auto rafthandler = make_shared<Raft::RaftHandler>(nullptr, par, store, netnode, conn);
@@ -132,7 +137,7 @@ createNode(Params *par,
 
     netnode->nodeStart(leaderAddr, par->idleTimeout);
 
-    return std::make_tuple(network, netnode, rafthandler);
+    return std::make_tuple(netnode, rafthandler);
 }
 
 // Pulls the RequestVotes off of the queue and replies
@@ -225,17 +230,19 @@ TEST_CASE("Raft state testing", "[raft][state]")
 
     SECTION("Follower (times out) -> Candidate") {
         // Start up a network where the main node is a follower
+        auto network = MockNetwork::createNetwork(&params);
         Raft::MemoryBasedContextStore store(&params);
         vector<Address> nodes;
         nodes.push_back(nodeAddr);
+
         initializeStore(store, leaderAddr, nodes);
 
-        auto nettuple = createNode(&params,
+        auto nettuple = createNode(network,
+                                   &params,
                                    &store,
                                    leaderAddr,
                                    nodeAddr);
-        auto network = std::get<0>(nettuple);
-        auto netnode = std::get<1>(nettuple);
+        auto netnode = std::get<0>(nettuple);
 
         network->flush();
         runMessageLoop(netnode, &params, 0);
@@ -249,6 +256,7 @@ TEST_CASE("Raft state testing", "[raft][state]")
 
     // Candidate (times out) -> new election
     SECTION("Candidate (times out) -> (new election)") {
+        auto network = MockNetwork::createNetwork(&params);
         Raft::MemoryBasedContextStore store(&params);
         vector<Address> nodes;
         nodes.push_back(nodeAddr);
@@ -256,12 +264,12 @@ TEST_CASE("Raft state testing", "[raft][state]")
 
         initializeStore(store, leaderAddr, nodes);
 
-        auto nettuple = createNode(&params,
+        auto nettuple = createNode(network,
+                                   &params,
                                    &store,
                                    leaderAddr,
                                    nodeAddr);
-        auto network = std::get<0>(nettuple);
-        auto netnode = std::get<1>(nettuple);
+        auto netnode = std::get<0>(nettuple);
 
         network->flush();
         runMessageLoop(netnode, &params, 0);
@@ -282,6 +290,7 @@ TEST_CASE("Raft state testing", "[raft][state]")
 
     // Candidate (receive majority vote) -> leader
     SECTION("Candiate (receives majority vote) -> leader") {
+        auto network = MockNetwork::createNetwork(&params);
         Raft::MemoryBasedContextStore store(&params);
         vector<Address> nodes;
         nodes.push_back(nodeAddr);
@@ -289,12 +298,12 @@ TEST_CASE("Raft state testing", "[raft][state]")
 
         initializeStore(store, leaderAddr, nodes);
 
-        auto nettuple = createNode(&params,
+        auto nettuple = createNode(network,
+                                   &params,
                                    &store,
                                    leaderAddr,
                                    nodeAddr);
-        auto network = std::get<0>(nettuple);
-        auto netnode = std::get<1>(nettuple);
+        auto netnode = std::get<0>(nettuple);
         auto mockconn = network->findMockConnection(nodeAddr);
         network->create(nodes[1]);
         auto mockconn2 = network->findMockConnection(nodes[1]);
@@ -343,6 +352,7 @@ TEST_CASE("Raft state testing", "[raft][state]")
     }
 
     SECTION("Candidate (discovers new leader or term) -> follower") {
+        auto network = MockNetwork::createNetwork(&params);
         Raft::MemoryBasedContextStore store(&params);
         vector<Address> nodes;
         nodes.push_back(nodeAddr);
@@ -350,12 +360,12 @@ TEST_CASE("Raft state testing", "[raft][state]")
 
         initializeStore(store, leaderAddr, nodes);
 
-        auto nettuple = createNode(&params,
+        auto nettuple = createNode(network,
+                                   &params,
                                    &store,
                                    leaderAddr,
                                    nodeAddr);
-        auto network = std::get<0>(nettuple);
-        auto netnode = std::get<1>(nettuple);
+        auto netnode = std::get<0>(nettuple);
         auto mockconn = network->findMockConnection(nodeAddr);
         network->create(nodes[1]);
         auto mockconn2 = network->findMockConnection(nodes[1]);
@@ -380,15 +390,16 @@ TEST_CASE("Raft state testing", "[raft][state]")
     }
 
     SECTION("Leader (discovers server with higher term) -> follower") {
+        auto network = MockNetwork::createNetwork(&params);
         Raft::MemoryBasedContextStore store(&params);
 
-        auto nettuple = createNode(&params,
+        auto nettuple = createNode(network,
+                                   &params,
                                    &store,
                                    leaderAddr,
                                    leaderAddr);
-        auto network = std::get<0>(nettuple);
-        auto netnode = std::get<1>(nettuple);
-        auto rafthandler = std::get<2>(nettuple);
+        auto netnode = std::get<0>(nettuple);
+        auto rafthandler = std::get<1>(nettuple);
         auto conn = network->create(nodeAddr);
 
         params.resetCurrtime();
@@ -423,16 +434,17 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
         // This is the cluster startup model. This is the first
         // node that will startup, thus it will create a log and
         // start up as a candidate.
+        auto network = MockNetwork::createNetwork(&params);
         Raft::MemoryBasedContextStore store(&params);
 
         params.resetCurrtime();
 
-        auto nettuple = createNode(&params,
+        auto nettuple = createNode(network,
+                                   &params,
                                    &store,
                                    myAddr,
                                    myAddr);
-        auto network = std::get<0>(nettuple);
-        auto netnode = std::get<1>(nettuple);
+        auto netnode = std::get<0>(nettuple);
         auto mockconn = network->findMockConnection(myAddr);
 
         REQUIRE(netnode->context.currentState == Raft::State::CANDIDATE);
@@ -478,16 +490,17 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
 
     // Startup of a follower, which is then contacted by a leader
     SECTION("startup->follower->candidate then joins a group") {
+        auto network = MockNetwork::createNetwork(&params);
         Raft::MemoryBasedContextStore store(&params);
 
         params.resetCurrtime();
 
-        auto nettuple = createNode(&params,
+        auto nettuple = createNode(network,
+                                   &params,
                                    &store,
                                    leaderAddr,
                                    myAddr);
-        auto network = std::get<0>(nettuple);
-        auto netnode = std::get<1>(nettuple);
+        auto netnode = std::get<0>(nettuple);
         auto mockconn = network->findMockConnection(myAddr);
         auto leaderconn = network->create(leaderAddr);
 
@@ -609,15 +622,16 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
     // Action: Adding 8080 to the cluster
     SECTION("Basic AddServer functionality - leader") {
         // Startup a leader
+        auto network = MockNetwork::createNetwork(&params);
         Raft::MemoryBasedContextStore store(&params);
 
-        auto nettuple = createNode(&params,
+        auto nettuple = createNode(network,
+                                   &params,
                                    &store,
                                    leaderAddr,
                                    leaderAddr);
-        auto network = std::get<0>(nettuple);
-        auto netnode = std::get<1>(nettuple);
-        auto rafthandler = std::get<2>(nettuple);
+        auto netnode = std::get<0>(nettuple);
+        auto rafthandler = std::get<1>(nettuple);
         auto conn = network->create(myAddr);
         auto mockconn = network->findMockConnection(myAddr);
 
@@ -779,14 +793,15 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
     // Nodes: 9000 (leader), 8080
     // Action: Adding 8080 to the cluster
     SECTION("Basic AddServer functionality - follower") {
+        auto network = MockNetwork::createNetwork(&params);
         Raft::MemoryBasedContextStore store(&params);
 
-        auto nettuple = createNode(&params,
+        auto nettuple = createNode(network,
+                                   &params,
                                    &store,
                                    leaderAddr,
                                    myAddr);
-        auto network = std::get<0>(nettuple);
-        auto netnode = std::get<1>(nettuple);
+        auto netnode = std::get<0>(nettuple);
         auto mockconn = network->findMockConnection(myAddr);
         auto leaderconn = network->create(leaderAddr);
         AppendEntriesReply  reply;
@@ -898,6 +913,7 @@ TEST_CASE("RemoveServer test cases", "[raft][RemoveServer]") {
     // Action: remove 8200 from the cluster
     SECTION("Basic RemoveServer functionality - leader") {
         // Startup a leader with 2 follower (total of 3)
+        auto network = MockNetwork::createNetwork(&params);
         Raft::MemoryBasedContextStore store(&params);
         HeaderOnlyMessage header;
         AppendEntriesMessage append;
@@ -909,13 +925,13 @@ TEST_CASE("RemoveServer test cases", "[raft][RemoveServer]") {
 
         initializeStore(store, leaderAddr, nodes);
 
-        auto nettuple = createNode(&params,
+        auto nettuple = createNode(network,
+                                   &params,
                                    &store,
                                    leaderAddr,
                                    leaderAddr);
-        auto network = std::get<0>(nettuple);
-        auto netnode = std::get<1>(nettuple);
-        auto rafthandler = std::get<2>(nettuple);
+        auto netnode = std::get<0>(nettuple);
+        auto rafthandler = std::get<1>(nettuple);
 
         params.resetCurrtime();
 
@@ -1057,18 +1073,19 @@ TEST_CASE("RemoveServer test cases", "[raft][RemoveServer]") {
     // Nodes: 9000 (leader), 8100, 8200
     // Action: remove 8200 from the cluster
     SECTION("Basic RemoveServer functionality - follower") {
+        auto network = MockNetwork::createNetwork(&params);
         Raft::MemoryBasedContextStore store(&params);
         vector<Address> nodes;
         nodes.push_back(nodeAddr);
         nodes.push_back(node2Addr);
         initializeStore(store, leaderAddr, nodes);
 
-        auto nettuple = createNode(&params,
+        auto nettuple = createNode(network,
+                                   &params,
                                    &store,
                                    leaderAddr,
                                    nodeAddr);
-        auto network = std::get<0>(nettuple);
-        auto netnode = std::get<1>(nettuple);
+        auto netnode = std::get<0>(nettuple);
         auto mockconn = network->findMockConnection(nodeAddr);
         auto leaderconn = network->create(leaderAddr);
         AppendEntriesReply  reply;
@@ -1156,9 +1173,13 @@ TEST_CASE("RemoveServer test cases", "[raft][RemoveServer]") {
 TEST_CASE("System test", "[raft][system]") {
     Params      params;
     Address     leaderAddr(0x64656667, 9000); // 100.101.102.103:9000
-    vector<Address> nodes;
-    nodes.emplace_back(0x64656667, 8010);
-    nodes.emplace_back(0x64656667, 8020);
+    Address     node1Addr(0x64656667, 8100);
+    Address     node2Addr(0x64656667, 8200);
+    Address     adminAddr(0x64656667, 8999);
+
+    vector<Address> addresses;
+    addresses.push_back(node1Addr);
+    addresses.push_back(node2Addr);
 
     // Setup the timeouts
     params.electionTimeout = 10;
@@ -1166,14 +1187,71 @@ TEST_CASE("System test", "[raft][system]") {
     params.rpcTimeout = 5;
 
     SECTION("3-node startup") {
+        auto network = MockNetwork::createNetwork(&params);
+        Raft::MemoryBasedContextStore leaderstore(&params);
+        Raft::MemoryBasedContextStore store(&params);
+        shared_ptr<RaftHandler> leaderHandler;
         vector<shared_ptr<NetworkNode>> nodes;
 
+        initializeStore(store, leaderAddr, addresses);
+
         // Create the leader
+        auto admin = network->create(adminAddr);
+        auto nettuple = createNode(network, &params, &leaderstore,
+                                   leaderAddr, leaderAddr);
+        nodes.push_back(std::get<0>(nettuple));
+        leaderHandler = std::get<1>(nettuple);
+
+        // Transition candidate to leader
+        runMessageLoop(nodes[0], &params, params.getElectionTimeout());
+        REQUIRE(nodes[0]->context.currentState == State::LEADER);
+
         // Create the two follower nodes
+        nettuple = createNode(network, &params, &store,
+                              leaderAddr, node1Addr);
+        nodes.push_back(std::get<0>(nettuple));
+        REQUIRE(nodes.back()->context.currentState == State::FOLLOWER);
+
+        nettuple = createNode(network, &params, &store,
+                              leaderAddr, node2Addr);
+        nodes.push_back(std::get<0>(nettuple));
+        REQUIRE(nodes.back()->context.currentState == State::FOLLOWER);
+
         // Tell the leader to add the child nodes
+        auto command = make_shared<CommandMessage>();
+        command->type = CommandType::CRAFT_ADDSERVER;
+        command->transId = 1;
+        command->address = node1Addr;
+        command->to = leaderAddr;
+        command->from = adminAddr;
+        leaderHandler->onChangeServerCommand(command,
+                                             Command::CMD_ADD_SERVER,
+                                             node1Addr);
+        while (network->messages.size() > 0) {
+            runMessageLoop(nodes, &params, 0);
+            flushMessages(admin);
+        }
+
+        command->type = CommandType::CRAFT_ADDSERVER;
+        command->transId = 2;
+        command->address = node2Addr;
+        command->to = leaderAddr;
+        command->from = adminAddr;
+        leaderHandler->onChangeServerCommand(command,
+                                             Command::CMD_ADD_SERVER,
+                                             node2Addr);
+
         // Let the system settle
+        while (network->messages.size() > 0) {
+            runMessageLoop(nodes, &params, 1);
+            flushMessages(admin);
+        }
 
         // Verify the expected system state
+        REQUIRE(nodes[0]->member.isMember(leaderAddr));
+        REQUIRE(nodes[0]->member.isMember(node1Addr));
+        REQUIRE(nodes[0]->member.isMember(node2Addr));
+        REQUIRE(nodes[0]->context.followers.size() == 2);
     }
 }
 

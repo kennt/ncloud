@@ -667,6 +667,7 @@ void MemberChangeTransaction::onPrevConfigCompleted(Transaction *trans,
                 recipients.end());
         }
 
+        
         // make the change
         auto update = make_shared<GroupUpdateTransaction>(log, par, handler);
         update->transId = this->handler->getNextMessageId();
@@ -933,6 +934,9 @@ void RaftHandler::onChangeServerCommand(shared_ptr<CommandMessage> message,
         trans->term = node->context.currentTerm;
         trans->init(node->member);
 
+        trans->onCompleted = std::bind(&RaftHandler::onCompletedMemberChange,
+                                       this, _1, _2);
+
         trans->lastLogIndex = node->context.getLastLogIndex();
         trans->lastLogTerm = node->context.getLastLogTerm();
         trans->server = address;
@@ -1161,8 +1165,9 @@ void RaftHandler::onCompletedElection(Transaction *trans, bool success)
 
 void RaftHandler::onCompletedMemberChange(Transaction *trans, bool success)
 {
-    memberchange->close();
-    this->removeTransaction(memberchange->transId);
-
-    memberchange = nullptr;
+    if (this->memberchange) {
+        this->memberchange->close();
+        this->removeTransaction(this->memberchange->transId);
+    }
+    this->memberchange = nullptr;
 }
