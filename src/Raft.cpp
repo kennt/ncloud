@@ -210,7 +210,7 @@ Transaction::RESULT ElectionTimeoutTransaction::onTimeout()
         if (!node->context.votedFor &&
             !node->member.memberList.empty()) {
             // Election timeout!
-            node->context.currentState = State::CANDIDATE;
+            node->context.switchToCandidate();
             node->context.startElection(node->member);
         }
     }
@@ -753,6 +753,8 @@ void RaftHandler::start(const Address &leader)
 
         // Special case!  Have the node start an election
         // immediately!
+        // Just for this, start with an extra term
+        node->context.currentTerm++;
         node->context.switchToCandidate();
         node->context.startElection(node->member);
     }
@@ -781,7 +783,7 @@ void RaftHandler::onMessageReceived(const RawMessage *raw)
             "new term(%d->%d)! converting to follower",
             node->context.currentTerm, header.term);
         node->context.currentTerm = header.term;
-        node->context.currentState = State::FOLLOWER;
+        node->context.switchToFollower();
         node->context.currentLeader = raw->fromAddress;
 
         // new term, clear the lastVotedFor
@@ -1143,19 +1145,8 @@ void RaftHandler::onCompletedElection(Transaction *trans, bool success)
     if (success) {
         node->context.switchToLeader();
 
-        // on becoming a leader, sendout an initial heartbeat
-        auto update = make_shared<GroupUpdateTransaction>(this->log,
-                                                          this->par,
-                                                          this);
-        update->transId = this->getNextMessageId();
-        update->term = node->context.currentTerm;
-        update->init(node->member,
-                     node->context.getLastLogIndex(),
-                     node->context.getLastLogTerm());
-
-        //$ TODO: what should the timeout be here?
-        // this is the lifetime timeout
-        update->startTimeout(5*par->getElectionTimeout());
+        heartbeat->start();
+        heartbeat->startTimeout(par->idleTimeout);
     }
     else {
         // try again

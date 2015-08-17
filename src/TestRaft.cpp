@@ -28,8 +28,9 @@ void runMessageLoop(shared_ptr<NetworkNode> node, Params *par, int tm)
 
 void runMessageLoop(vector<shared_ptr<NetworkNode>>& nodes, Params *par, int tm)
 {
+    par->addToCurrtime(tm);
     for (auto & node : nodes) {
-        runMessageLoop(node, par, tm);
+        runMessageLoop(node, par, 0);
     }
 }
 
@@ -455,7 +456,7 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
 
         // Since this became a candidate
         // (check for incremented term)
-        REQUIRE(netnode->context.currentTerm == 1);
+        REQUIRE(netnode->context.currentTerm == 2);
         // (check for vote for self)
         REQUIRE(myAddr == netnode->context.votedFor);
         // Should still be no leader
@@ -572,13 +573,6 @@ TEST_CASE("Raft failover", "[raft][failover]") {
 
 // Test cases for log compaction
 
-// Full multi-node scenario test (no errors)
-// (tests full node-node interaction rather than simulated nodes)
-TEST_CASE("Raft multi-node startup", "[raft][full]") {
-    // Startup three nodes and have them communicate with each other
-    // One will be picked as the leader
-}
-
 // Test AddServer
 // Typical message flow
 //
@@ -668,7 +662,7 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
 
         AppendEntriesMessage    append;
         append.load(raw.get());
-        REQUIRE(append.term == 1);
+        REQUIRE(append.term == 2    );
         REQUIRE(append.prevLogTerm == 0);
         REQUIRE(append.prevLogIndex == 0);
         REQUIRE(append.entries.size() == 1);
@@ -692,7 +686,7 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
         header.load(raw.get());
         REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
         append.load(raw.get());
-        REQUIRE(append.term == 1);
+        REQUIRE(append.term == 2);
         REQUIRE(append.prevLogTerm == 0);
         REQUIRE(append.prevLogIndex == 1);
         REQUIRE(append.entries.size() == 0);
@@ -721,8 +715,8 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
         header.load(raw.get());
         REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
         append.load(raw.get());
-        REQUIRE(append.term == 1);
-        REQUIRE(append.prevLogTerm == 1);
+        REQUIRE(append.term == 2);
+        REQUIRE(append.prevLogTerm == 2);
         REQUIRE(append.prevLogIndex == 2);
         REQUIRE(append.entries.size() == 0);
         REQUIRE(append.leaderCommit == 1);
@@ -741,11 +735,11 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
         header.load(raw.get());
         REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
         append.load(raw.get());
-        REQUIRE(append.term == 1);
+        REQUIRE(append.term == 2);
         REQUIRE(append.prevLogTerm == 0);
         REQUIRE(append.prevLogIndex == 1);
         REQUIRE(append.entries.size() == 1);
-        REQUIRE(append.entries[0].termReceived == 1);
+        REQUIRE(append.entries[0].termReceived == 2);
         REQUIRE(append.entries[0].command == Command::CMD_ADD_SERVER);
         REQUIRE(append.entries[0].address == myAddr);
         REQUIRE(append.leaderCommit == 1);
@@ -764,8 +758,8 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
         header.load(raw.get());
         REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
         append.load(raw.get());
-        REQUIRE(append.term == 1);
-        REQUIRE(append.prevLogTerm == 1);
+        REQUIRE(append.term == 2);
+        REQUIRE(append.prevLogTerm == 2);
         REQUIRE(append.prevLogIndex == 2);
         REQUIRE(append.entries.size() == 0);
         REQUIRE(append.leaderCommit == 1);
@@ -972,7 +966,7 @@ TEST_CASE("RemoveServer test cases", "[raft][RemoveServer]") {
         header.load(raw.get());
         REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
         append.load(raw.get());
-        REQUIRE(append.term == 2);
+        REQUIRE(append.term == 3);
         REQUIRE(append.prevLogTerm == 1);
         REQUIRE(append.prevLogIndex == 3);
         REQUIRE(append.entries.size() == 0);
@@ -993,9 +987,9 @@ TEST_CASE("RemoveServer test cases", "[raft][RemoveServer]") {
         header.load(raw.get());
         REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
         append.load(raw.get());
-        REQUIRE(append.term == 2);
+        REQUIRE(append.term == 3);
         REQUIRE(append.prevLogIndex == 4);
-        REQUIRE(append.prevLogTerm == 2);
+        REQUIRE(append.prevLogTerm == 3);
         REQUIRE(append.entries.size() == 0);
         REQUIRE(append.leaderCommit == 3);
 
@@ -1012,11 +1006,11 @@ TEST_CASE("RemoveServer test cases", "[raft][RemoveServer]") {
         header.load(raw.get());
         REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
         append.load(raw.get());
-        REQUIRE(append.term == 2);
+        REQUIRE(append.term == 3);
         REQUIRE(append.prevLogIndex == 3);
         REQUIRE(append.prevLogTerm == 1);
         REQUIRE(append.entries.size() == 1);
-        REQUIRE(append.entries[0].termReceived == 2);
+        REQUIRE(append.entries[0].termReceived == 3);
         REQUIRE(append.entries[0].command == Command::CMD_REMOVE_SERVER);
         REQUIRE(append.entries[0].address == node2Addr);
         REQUIRE(append.leaderCommit == 3);
@@ -1035,8 +1029,8 @@ TEST_CASE("RemoveServer test cases", "[raft][RemoveServer]") {
         header.load(raw.get());
         REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
         append.load(raw.get());
-        REQUIRE(append.term == 2);
-        REQUIRE(append.prevLogTerm == 2);
+        REQUIRE(append.term == 3);
+        REQUIRE(append.prevLogTerm == 3);
         REQUIRE(append.prevLogIndex == 4);
         REQUIRE(append.entries.size() == 0);
         REQUIRE(append.leaderCommit == 3);
@@ -1186,6 +1180,9 @@ TEST_CASE("System test", "[raft][system]") {
     params.idleTimeout = 5;   // not used by the mock network
     params.rpcTimeout = 5;
 
+    // Main node: 9000, 8100, 8200
+    // Nodes: 9000 (leader), 8100, 8200
+    // Action: start up 9000 (leader), 8100 and 8200 (followers)
     SECTION("3-node startup") {
         auto network = MockNetwork::createNetwork(&params);
         Raft::MemoryBasedContextStore leaderstore(&params);
@@ -1228,9 +1225,11 @@ TEST_CASE("System test", "[raft][system]") {
                                              Command::CMD_ADD_SERVER,
                                              node1Addr);
         while (network->messages.size() > 0) {
-            runMessageLoop(nodes, &params, 0);
+            runMessageLoop(nodes, &params, 1);
             flushMessages(admin);
         }
+
+        REQUIRE(nodes[0]->context.currentState == State::LEADER);
 
         command->type = CommandType::CRAFT_ADDSERVER;
         command->transId = 2;
@@ -1252,6 +1251,26 @@ TEST_CASE("System test", "[raft][system]") {
         REQUIRE(nodes[0]->member.isMember(node1Addr));
         REQUIRE(nodes[0]->member.isMember(node2Addr));
         REQUIRE(nodes[0]->context.followers.size() == 2);
+        REQUIRE(nodes[0]->context.currentState == State::LEADER);
+        REQUIRE(nodes[0]->context.commitIndex == 3);
+
+        // Go through a couple of election timeout cycles
+        // Heartbeats should have been sent
+        auto leaderconn = network->findMockConnection(leaderAddr);
+        int sent = leaderconn->messagesSent;
+
+        for (int i=0; i<2*params.idleTimeout; i++) {
+            runMessageLoop(nodes, &params, 1);
+            flushMessages(admin);
+        }
+
+        REQUIRE(leaderconn->messagesSent == (sent+8));
+        REQUIRE(nodes[0]->member.isMember(leaderAddr));
+        REQUIRE(nodes[0]->member.isMember(node1Addr));
+        REQUIRE(nodes[0]->member.isMember(node2Addr));
+        REQUIRE(nodes[0]->context.followers.size() == 2);
+        REQUIRE(nodes[0]->context.currentState == State::LEADER);
+        REQUIRE(nodes[0]->context.commitIndex == 3);
     }
 }
 
