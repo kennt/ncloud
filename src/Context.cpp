@@ -143,10 +143,6 @@ void Context::loadFromStore()
     // Read in currentLeader, currentTerm, votedForAddress
     // and log entries
     unsigned short port;
-    port = root.get("currentLeaderPort", 0).asInt();
-    this->currentLeader.parse(
-        root.get("currentLeader", "0.0.0.0").asString().c_str(), port);
-
     this->currentTerm = root.get("currentTerm", 0).asInt();
 
     port = root.get("votedForPort", 0).asInt();
@@ -182,8 +178,6 @@ void Context::saveToStore()
 
     Json::Value root;
 
-    root["currentLeader"] = this->currentLeader.toAddressString();
-    root["currentLeaderPort"] = this->currentLeader.getPort();
     root["currentTerm"] = this->currentTerm;
     root["votedFor"] = this->votedFor.toAddressString();
     root["votedForPort"] = this->votedFor.getPort();

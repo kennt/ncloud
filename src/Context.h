@@ -248,13 +248,13 @@ struct Context
     // (initialized to 0, increase monotonically)
     int         lastAppliedIndex;
 
+    // Current leader address
+    Address     currentLeader;
+
     // ==================
     // Persistent state for the system
     // (Updated on stable storage before responding to RPCs)
     // ==================
-    // Current leader address
-    Address     currentLeader;
-
     // The latest term that this server has seen (initialized to 0 on
     // first boot, increases monotonically).
     int         currentTerm;

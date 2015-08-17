@@ -576,7 +576,10 @@ public:
 
     // Handlers for command messages
     // i.e. those messages received via JSON command messages
-    void onChangeServerCommand(shared_ptr<CommandMessage> command, const Address& address);
+    // The parameters are the command and the address to be changed.
+    void onChangeServerCommand(shared_ptr<CommandMessage> message,
+                               Command command,
+                               const Address& address);
 
     // Transaction support
     shared_ptr<Transaction> findTransaction(int transid);
