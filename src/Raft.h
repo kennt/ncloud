@@ -535,7 +535,8 @@ public:
                 shared_ptr<NetworkNode> netnode,
                 shared_ptr<IConnection> connection)
         : log(log), par(par), store(store), netnode(netnode),
-            connection_(connection), lastUpdate(0), nextMessageId(0)
+        connection_(connection), lastUpdate(0), electionTimeoutModifier(0),
+        nextMessageId(0)
     {
     };
 
@@ -599,10 +600,8 @@ public:
     void applyLogEntry(const RaftLogEntry& entry);
     void applyLogEntries(const vector<RaftLogEntry>& entries);
 
-    // Returns true if the log is up-to-date
-    // i.e. the last entry of the log is equal to term
-    // or in this case log.size()-1 == index and log[index] == term
-    // (subtract 1 from the size due to the 0th entry)
+    // Returns true if the request (represented by the parameters)
+    // is more current than our log.
     bool isLogCurrent(int index, int term);
 
     int getNextMessageId() { return ++nextMessageId; }
@@ -621,6 +620,11 @@ public:
     void onCompletedElection(Transaction *trans, bool success);
     void onCompletedMemberChange(Transaction *trans, bool success);
 
+    int  getElectionTimeout()
+        { return par->electionTimeout + this->electionTimeoutModifier; }
+    void setElectionTimeoutModifier(int tm)
+        { this->electionTimeoutModifier = tm; }
+
 protected:
     Log *                   log;
     Params *                par;
@@ -628,6 +632,7 @@ protected:
     weak_ptr<NetworkNode>   netnode;
     shared_ptr<IConnection> connection_;
     int                     lastUpdate;
+    int                     electionTimeoutModifier;
 
     // This can be built from the log by executing all
     // of the log entries.

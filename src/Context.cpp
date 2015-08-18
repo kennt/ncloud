@@ -243,7 +243,7 @@ void Context::startElection(const MemberInfo& member)
     election->start();
     this->votedFor = this->handler->address();
 
-    election->startTimeout(par->getElectionTimeout());
+    election->startTimeout(this->handler->getElectionTimeout());
 }
 
 void Context::addEntries(int startIndex, vector<RaftLogEntry> & entries)

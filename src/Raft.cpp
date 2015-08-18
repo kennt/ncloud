@@ -467,7 +467,7 @@ void GroupUpdateTransaction::start()
 
         update->start();
         //$ TODO: what should this timeout be?
-        update->startTimeout(par->getElectionTimeout());;
+        update->startTimeout(this->handler->getElectionTimeout());;
     }
 
 }
@@ -624,7 +624,7 @@ void MemberChangeTransaction::onServerUpdateCompleted(Transaction *trans,
         
             update->start();
 
-            update->setLifetime(5*par->getElectionTimeout());
+            update->setLifetime(5*this->handler->getElectionTimeout());
         }
     }
     else {
@@ -678,7 +678,7 @@ void MemberChangeTransaction::onPrevConfigCompleted(Transaction *trans,
 
         update->start();        
 
-        update->setLifetime(5*par->getElectionTimeout());
+        update->setLifetime(5*this->handler->getElectionTimeout());
     }
     else {
         completed(false);
@@ -753,7 +753,7 @@ void RaftHandler::start(const Address &leader)
     }
 
     // Start the election timeout
-    this->election->startTimeout(par->getElectionTimeout());
+    this->election->startTimeout(this->getElectionTimeout());
 }
 
 // This is a callback and is called when the connection has received
@@ -941,7 +941,7 @@ void RaftHandler::onChangeServerCommand(shared_ptr<CommandMessage> message,
         // Get this started!
         trans->start();
         //$ TODO: what should the overall timeout be here?
-        trans->startTimeout(5*par->getElectionTimeout());
+        trans->startTimeout(5*this->getElectionTimeout());
     }
 
     if (reply) {
@@ -996,7 +996,7 @@ void RaftHandler::onTimeout()
 
             update->start();
 
-            update->setLifetime(5*par->getElectionTimeout());
+            update->setLifetime(5*this->getElectionTimeout());
             update->startTimeout(par->idleTimeout);
 
             node->context.setLogChanged(false);
@@ -1051,13 +1051,17 @@ void RaftHandler::applyLogEntries(const vector<RaftLogEntry> &entries)
     }
 }
 
+// Compare according to 3.6.1
+// Compare the last terms, larger term is more current
+// If terms are equal, compare the length
 bool RaftHandler::isLogCurrent(int index, int term)
 {
     auto node = getNetworkNode();
 
-    if (index != node->context.getLastLogIndex())
-        return false;
-    return term == node->context.logEntries[index].termReceived;
+    if (term == node->context.getLastLogTerm())
+        return index >= node->context.getLastLogIndex();
+    else
+        return term > node->context.getLastLogTerm();
 }
 
 void RaftHandler::broadcast(Message *message)
