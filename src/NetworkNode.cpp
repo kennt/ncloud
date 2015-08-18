@@ -85,7 +85,10 @@ void NetworkNode::receiveMessages()
     for (auto & info : handlers) {
         auto raw = info.second.connection->recv(timeout);
         while (raw != nullptr) {
-            info.second.queue->push_back(std::move(raw));
+            // Pull messages off the queue, but if the node failed
+            // don't queue them for processing
+            if (!failed())
+                info.second.queue->push_back(std::move(raw));
             raw = info.second.connection->recv(0);
         }
     }
@@ -94,6 +97,10 @@ void NetworkNode::receiveMessages()
 void NetworkNode::processQueuedMessages()
 {
     for (auto & info : handlers) {
+        if (failed()) {
+            info.second.queue->clear();
+            continue;
+        }
         // Equivalent to calling the old checkMessages()
         while (!info.second.queue->empty()) {
             auto raw = std::move(info.second.queue->front());

@@ -167,3 +167,56 @@ TEST_CASE("Context", "[context]")
 
     }
 }
+
+TEST_CASE("MockNetwork filter", "[MockNetwork][filter]") {
+    Params  params;
+
+    SECTION("filter test") {
+        Address     addr1(0x64656667, 1000);
+        Address     addr2(0x64656667, 2000);
+        Address     addr3(0x64656667, 3000);
+
+        auto network = MockNetwork::createNetwork(&params);
+        auto conn1 = network->create(addr1);
+        auto conn2 = network->create(addr2);
+        auto conn3 = network->create(addr3);
+
+        RawMessage  raw;
+        // send 1 --> 3
+        raw.fromAddress = addr1;
+        raw.toAddress = addr3;
+        conn1->send(&raw);
+
+        // send 2 --> 1
+        raw.fromAddress = addr2;
+        raw.toAddress = addr1;
+        conn2->send(&raw);
+
+        network->installFilter([addr2](const MockMessage *mess)->bool
+                                { return mess->from != addr2; });
+
+        // The filter should have removed the message: 2 --> 1
+        auto reply = conn3->recv(0);
+        REQUIRE(reply != nullptr);
+        reply = conn1->recv(0);
+        REQUIRE(reply == nullptr);
+
+        // Try sending another message (2-->3) this should fail also
+        raw.fromAddress = addr2;
+        raw.toAddress = addr3;
+        conn2->send(&raw);
+
+        reply = conn3->recv(0);
+        REQUIRE(reply == nullptr);
+
+        network->installFilter(nullptr);
+
+        // Resend, but this should succeed
+        raw.fromAddress = addr2;
+        raw.toAddress = addr3;
+        conn2->send(&raw);
+
+        reply = conn3->recv(0);
+        REQUIRE(reply);
+    }
+}

@@ -22,8 +22,6 @@ using namespace Raft;
 void runMessageLoop(shared_ptr<NetworkNode> node, Params *par, int tm)
 {
     par->addToCurrtime(tm);
-    if (node->failed())
-        return;
     node->receiveMessages();
     node->processQueuedMessages();
 }
@@ -33,6 +31,24 @@ void runMessageLoop(vector<shared_ptr<NetworkNode>>& nodes, Params *par, int tm)
     par->addToCurrtime(tm);
     for (auto & node : nodes) {
         runMessageLoop(node, par, 0);
+    }
+}
+
+void runMessageLoopUntilSilent(shared_ptr<MockNetwork> network,
+                               vector<shared_ptr<NetworkNode>>& nodes,
+                               Params *par)
+{
+    while(network->messages.size() > 0) {
+        runMessageLoop(nodes, par, 1);
+    }
+}
+
+void runMessageLoopUntilActive(shared_ptr<MockNetwork> network,
+                               vector<shared_ptr<NetworkNode>>& nodes,
+                               Params *par)
+{
+    while (network->messages.size() == 0) {
+        runMessageLoop(nodes, par, 1);
     }
 }
 
@@ -1265,14 +1281,14 @@ TEST_CASE("System test", "[raft][system]") {
 }
 
 // Test cases for various election scenarios
-TEST_CASE("Raft elections", "[raft][election]")
+TEST_CASE("Raft elections", "[raft][election][system]")
 {
     Params      params;
     Address     leaderAddr(0x64656667, 9000); // 100.101.102.103:9000
     Address     node1Addr(0x64656667, 8100);
     Address     node2Addr(0x64656667, 8200);
     Address     node3Addr(0x64656667, 8300);
-    Address     adminAddr(0x64656667, 8999);
+    Address     node4Addr(0x64656667, 8400);
 
     vector<Address> addresses;
     addresses.push_back(node1Addr);
@@ -1294,17 +1310,14 @@ TEST_CASE("Raft elections", "[raft][election]")
         auto network = MockNetwork::createNetwork(&params);
         Raft::MemoryBasedContextStore leaderstore(&params);
         Raft::MemoryBasedContextStore store(&params);
-        shared_ptr<RaftHandler> leaderHandler;
         vector<shared_ptr<NetworkNode>> nodes;
 
         initializeStore(leaderstore, leaderAddr, addresses);
 
         // Create the leader
-        auto admin = network->create(adminAddr);
         auto nettuple = createNode(network, &params, &leaderstore,
                                    leaderAddr, leaderAddr);
         nodes.push_back(std::get<0>(nettuple));
-        leaderHandler = std::get<1>(nettuple);
 
         // create follower nodes
         nettuple = createNode(network, &params, &store, leaderAddr, node1Addr, -2);
@@ -1317,26 +1330,26 @@ TEST_CASE("Raft elections", "[raft][election]")
         nodes.push_back(std::get<0>(nettuple));
 
         // Transition candidate to leader
-        while (network->messages.size() > 0) {
-            runMessageLoop(nodes, &params, 1);
-            flushMessages(admin);
-        }
+        runMessageLoopUntilSilent(network, nodes, &params);
 
         REQUIRE(nodes[0]->context.currentState == State::LEADER);
         REQUIRE(nodes[0]->member.memberList.size() == 4);
+        REQUIRE(nodes[0]->context.commitIndex == 0);
 
         // Need to go through a heartbeat cycle to catch
         // the follower nodes up
         runMessageLoop(nodes, &params, params.idleTimeout);
-        while (network->messages.size() > 0) {
-            runMessageLoop(nodes, &params, 1);
-            flushMessages(admin);
-        }
+        runMessageLoopUntilSilent(network, nodes, &params);
+
         REQUIRE(nodes[0]->context.currentState == State::LEADER);
         REQUIRE(nodes[0]->member.memberList.size() == 4);
         REQUIRE(nodes[1]->member.memberList.size() == 4);
         REQUIRE(nodes[2]->member.memberList.size() == 4);
         REQUIRE(nodes[3]->member.memberList.size() == 4);
+        REQUIRE(nodes[0]->context.commitIndex == 4);
+        REQUIRE(nodes[1]->context.commitIndex == 4);
+        REQUIRE(nodes[2]->context.commitIndex == 4);
+        REQUIRE(nodes[3]->context.commitIndex == 4);
 
         // Now fail the leader node
         nodes[0]->fail();
@@ -1345,10 +1358,7 @@ TEST_CASE("Raft elections", "[raft][election]")
         // (should have triggered an election cycle)
         // Node1 has a shorter electionTimeout so it should
         // become a candidate first.
-        do {
-            runMessageLoop(nodes, &params, 1);
-            flushMessages(admin);
-        } while (network->messages.size() == 0);
+        runMessageLoopUntilActive(network, nodes, &params);
 
         REQUIRE(nodes[1]->context.currentState == State::CANDIDATE);
         REQUIRE(nodes[2]->context.currentState == State::FOLLOWER);
@@ -1366,13 +1376,93 @@ TEST_CASE("Raft elections", "[raft][election]")
         REQUIRE(nodes[1]->member.memberList.size() == 4);
         REQUIRE(nodes[2]->context.currentState == State::FOLLOWER);
         REQUIRE(nodes[3]->context.currentState == State::FOLLOWER);
-
     }
 
-    // election timeout with multiple nodes, do they
-    // backoff randomly
+    // split-vote election, backoff test
+    // (to partition the network, add a filter).
+    // Main node: 9000, 8100, 8200, 8300, 8400
+    // Nodes: 9000 (leader), 8100, 8200, 8300, 8400
+    // Action: start up 9000 (leader), 8100, 8200, 8300, 8400 (followers)
+    //         fail 9000
+    //         partition into 2 networks (8100,8200) and (8300,8400)
+    //         should get two nodes as candidates 8100 and 8300
+    //         rejoin the paritions (8100 should win)
+    SECTION("split-vote election") {
+        auto network = MockNetwork::createNetwork(&params);
+        Raft::MemoryBasedContextStore leaderstore(&params);
+        Raft::MemoryBasedContextStore store(&params);
+        vector<shared_ptr<NetworkNode>> nodes;
 
-    // multiple leader scenarios
+        addresses.clear();
+        addresses.push_back(node1Addr);
+        addresses.push_back(node2Addr);
+        addresses.push_back(node3Addr);
+        addresses.push_back(node4Addr);
+
+        initializeStore(leaderstore, leaderAddr, addresses);
+
+        // Create the leader
+        auto nettuple = createNode(network, &params, &leaderstore,
+                                   leaderAddr, leaderAddr);
+        nodes.push_back(std::get<0>(nettuple));
+
+        // create follower nodes
+        nettuple = createNode(network, &params, &store, leaderAddr, node1Addr, -4);
+        nodes.push_back(std::get<0>(nettuple));
+
+        nettuple = createNode(network, &params, &store, leaderAddr, node2Addr);
+        nodes.push_back(std::get<0>(nettuple));
+
+        nettuple = createNode(network, &params, &store, leaderAddr, node3Addr, -2);
+        nodes.push_back(std::get<0>(nettuple));
+
+        nettuple = createNode(network, &params, &store, leaderAddr, node4Addr);
+        nodes.push_back(std::get<0>(nettuple));
+
+        // Transition candidate to leader
+        runMessageLoopUntilSilent(network, nodes, &params);
+
+        REQUIRE(nodes[0]->context.currentState == State::LEADER);
+
+        // Need to go through a heartbeat cycle to catch
+        // the follower nodes up
+        runMessageLoop(nodes, &params, params.idleTimeout);
+        runMessageLoopUntilSilent(network, nodes, &params);
+
+        // Partition the network
+        map<const Address, int>   partition;
+        partition[leaderAddr] = 0;
+        partition[node1Addr] = 1;
+        partition[node2Addr] = 1;
+        partition[node3Addr] = 2;
+        partition[node4Addr] = 2;
+
+        nodes[0]->fail();
+
+        network->installFilter([partition](const MockMessage *mess) -> bool
+            { return partition.at(mess->from) == partition.at(mess->to); });
+
+        // Let the nodes run through their election
+        runMessageLoop(nodes, &params, params.electionTimeout);
+        runMessageLoopUntilSilent(network, nodes, &params);
+
+        // neither will have enough votes to win
+        REQUIRE(nodes[1]->context.currentState == State::CANDIDATE);
+        REQUIRE(nodes[2]->context.currentState == State::FOLLOWER);
+        REQUIRE(nodes[3]->context.currentState == State::CANDIDATE);
+        REQUIRE(nodes[4]->context.currentState == State::FOLLOWER);
+
+        // restore the network
+        network->installFilter(nullptr);
+        runMessageLoopUntilActive(network, nodes, &params);
+        runMessageLoopUntilSilent(network, nodes, &params);
+
+        // now one node should win
+        REQUIRE(nodes[1]->context.currentState == State::LEADER);
+        REQUIRE(nodes[2]->context.currentState == State::FOLLOWER);
+        REQUIRE(nodes[3]->context.currentState == State::FOLLOWER);
+        REQUIRE(nodes[4]->context.currentState == State::FOLLOWER);
+    }
 }
 
 // Test cases for log operations
@@ -1382,8 +1472,6 @@ TEST_CASE("Raft failover", "[raft][failover]") {
     // have the follower redirect the AddServer (which will fail)
     // timeout and then try again
 }
-
-// Test cases for log replication
 
 // Test cases for log compaction
 

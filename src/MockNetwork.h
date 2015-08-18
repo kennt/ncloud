@@ -74,8 +74,8 @@ struct MockMessage
     {
     }
 
-    Address     fromAddress;
-    Address     toAddress;
+    Address     from;
+    Address     to;
     int         timestamp;
     int         messageID;
 
@@ -149,6 +149,12 @@ public:
     // Test API used to add ("send") a message to the network
     void addMessage(const Address& from, const Address& to, RawMessage *raw);
 
+    // Installs a filter on messages. If false is returned from the filter
+    // the message is dropped.  To remove the filter, pass in nullptr.
+    // The filter is applied when setup (to all in-transit messages) and 
+    // is applied upon when send() is called.
+    void installFilter(std::function<bool (const MockMessage *raw)> func);
+
 protected:
     Params *    par;
 
@@ -158,6 +164,8 @@ protected:
     // Maps the network address (IP address + port) to a
     // connection/message queue.
     map<Address, shared_ptr<MockConnection>> connections;
+
+    std::function<bool (const MockMessage *raw)> filter;
 
 };
 

@@ -78,8 +78,8 @@ void MockConnection::send(const RawMessage *rawmsg)
         throw NetworkException(ENETDOWN, "Connection not enabled");
 
     auto msg = make_shared<MockMessage>();
-    msg->fromAddress = this->myAddress;
-    msg->toAddress = rawmsg->toAddress;
+    msg->from = this->myAddress;
+    msg->to = rawmsg->toAddress;
     msg->timestamp = par->getCurrtime();
     msg->dataSize = rawmsg->size;
 
@@ -113,8 +113,8 @@ unique_ptr<RawMessage> MockConnection::recv(int timeout)
         if (msg.get() != nullptr)
         {
             raw = make_unique<RawMessage>();
-            raw->toAddress = msg->toAddress;
-            raw->fromAddress = msg->fromAddress;
+            raw->toAddress = msg->to;
+            raw->fromAddress = msg->from;
             raw->size = msg->dataSize;
             raw->data = unique_ptr<byte[]>(new byte[msg->dataSize]);
             memcpy(raw->data.get(), msg->data.get(), msg->dataSize);
@@ -207,6 +207,10 @@ void MockNetwork::send(IConnection *conn, shared_ptr<MockMessage> message)
     if (messages.size() >= MAX_BUFFER_SIZE)
         throw NetworkException("too many messages, buffer limit exceeded");
 
+    // Drop if the filter returns false
+    if (this->filter && !this->filter(message.get()))
+        return;
+
     // Add this to the list of messages.  Note that we do not
     // check for the existence of the connection.
     messages.emplace_back(message);
@@ -229,7 +233,7 @@ shared_ptr<MockMessage> MockNetwork::recv(IConnection *conn)
     shared_ptr<MockMessage> message;
 
     for (auto it = messages.begin(); it != messages.end(); it++) {
-        if ((*it)->toAddress == conn->address()) {
+        if ((*it)->to == conn->address()) {
             message = *it;
             messages.erase(it);
             break;
@@ -253,3 +257,16 @@ void MockNetwork::flush()
     this->messages.clear();
 }
 
+void MockNetwork::installFilter(std::function<bool (const MockMessage *)> func)
+{
+    this->filter = func;
+
+    // apply to current messages
+    if (func) {
+        messages.erase(std::remove_if(messages.begin(),
+                                      messages.end(),
+                                      [this](shared_ptr<MockMessage>&mock)
+                                        { return !this->filter(mock.get()); }),
+                       messages.end());
+    }
+}
