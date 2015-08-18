@@ -83,6 +83,13 @@ void initializeStore(Raft::ContextStoreInterface& store,
     Json::Value log;
     
     Json::Value logEntry;
+
+    logEntry["term"] = 0;
+    logEntry["command"] = static_cast<int>(Command::CMD_NOOP);
+    logEntry["address"] = Address().toAddressString();
+    logEntry["port"] = Address().getPort();
+    log.append(logEntry);
+
     logEntry["term"] = 0;
     logEntry["command"] = static_cast<int>(Command::CMD_ADD_SERVER);
     logEntry["address"] = leader.toAddressString();

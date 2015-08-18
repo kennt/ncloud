@@ -140,7 +140,7 @@ void Context::loadFromStore()
 
     Json::Value root = store->read();
 
-    // Read in currentLeader, currentTerm, votedForAddress
+    // Read in currentTerm, votedForAddress
     // and log entries
     unsigned short port;
     this->currentTerm = root.get("currentTerm", 0).asInt();
@@ -150,7 +150,7 @@ void Context::loadFromStore()
         root.get("votedFor", "0.0.0.0").asString().c_str(), port);
 
     this->logEntries.clear();   // reset the log
-    this->logEntries.emplace_back(); // add dummy first entry
+
     Json::Value log = root["log"];
     for (int i=0; i<log.size(); i++) {
         RaftLogEntry    entry;
@@ -227,7 +227,6 @@ void Context::startElection(const MemberInfo& member)
     DEBUG_LOG(this->handler->address(),
         "Starting election : term %d", this->currentTerm+1);
 
-    // Increment current term
     this->currentTerm++;
 
     auto election = make_shared<ElectionTransaction>(this->log,
@@ -239,10 +238,10 @@ void Context::startElection(const MemberInfo& member)
     election->term = this->currentTerm;
     election->init(member);
 
+    this->handler->addTransaction(election);
+
     election->start();
     this->votedFor = this->handler->address();
-
-    this->handler->addTransaction(election);
 
     election->startTimeout(par->getElectionTimeout());
 }

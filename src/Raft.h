@@ -68,7 +68,8 @@ public:
     // Creates a RawMessage and serializes the data for this object
     // into the RawMessage data.  Ownership of the RawMessage is passed
     // to the caller.
-    virtual unique_ptr<RawMessage> toRawMessage(const Address &from, const Address &to) = 0; 
+    virtual unique_ptr<RawMessage> toRawMessage(const Address &from,
+                                                const Address &to) = 0; 
 
     static MessageType getMessageType(const byte *data, size_t size);
 
@@ -78,7 +79,7 @@ public:
 };
 
 // Use this class to read in only the message header
-// Used to simplify parts of the code that need to check the 
+// Used to simplify parts of the code that need to check only the 
 // header before taking action.
 class HeaderOnlyMessage : public Message
 {
@@ -86,7 +87,8 @@ public:
     HeaderOnlyMessage() : Message(MessageType::MSGTYPE_NONE) {}
 
     virtual void load(const RawMessage *raw) override;
-    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from,
+                                                const Address& to) override;
 };
 
 class AppendEntriesMessage : public Message
@@ -94,16 +96,10 @@ class AppendEntriesMessage : public Message
 public:
     // Implied MessageType::APPEND_ENTRIES
 
-    // leader's term
-    // int         term;
-
     // so follower can redirect clients
     Address     leaderAddress;
 
     // index of log entry immediately preceding new ones
-    // Thus we are overwriting/appending
-    //  for (int i=0; i<entries.size(); i++)
-    //      log[prevLogIndex+1+i] = entries[i]
     int         prevLogIndex;
 
     // term of prevLogIndex entry
@@ -121,16 +117,14 @@ public:
     {}
 
     virtual void load(const RawMessage *raw) override;
-    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from,
+                                                const Address& to) override;
 };
 
 class AppendEntriesReply : public Message
 {
 public:
     // Implied MessageType::APPEND_ENTRIES_REPLY
-
-    // currentTerm, for the leader to update itself
-    // int         term;
 
     // true if follower contained entry matching prevLogIndex and prevLogTerm
     bool        success;
@@ -139,16 +133,14 @@ public:
     {}
 
     virtual void load(const RawMessage *raw) override;
-    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from,
+                                                const Address& to) override;
 };
 
 class RequestVoteMessage : public Message
 {
 public:
     // Implied MessageType::REQUEST_VOTE
-
-    // candidate's term
-    // int         term;
 
     // candidate requesting vote
     Address     candidate;
@@ -164,16 +156,14 @@ public:
     {}
 
     virtual void load(const RawMessage *raw) override;
-    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from,
+                                                const Address& to) override;
 };
 
 class RequestVoteReply : public Message
 {
 public:
     // Implied MessageType::REQUEST_VOTE_REPLY
-
-    // currentTerm, for candidate to update itself
-    // int         term;
 
     // true means the candidate received the vote
     bool        voteGranted;
@@ -182,7 +172,8 @@ public:
     {}
 
     virtual void load(const RawMessage *raw) override;
-    virtual unique_ptr<RawMessage> toRawMessage(const Address& from, const Address& to) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from,
+                                                const Address& to) override;
 };
 
 // Transactions are used to track RPCs and their replies.  This are
@@ -192,10 +183,15 @@ public:
 // In Raft, RPCs are long-lived and can stay alive indefinitely.
 //
 class Transaction : public std::enable_shared_from_this<Transaction>
-
 {
 public:
+    // These are the return values from the callbacks.  DELETE means
+    // that the system will remove the transaction from the active
+    // list.
     enum class RESULT { KEEP=0, DELETE };
+
+    // These are special indexes. These transactions are special in
+    // that they always exist (though may not be active).
     enum INDEX { ELECTION = -10, HEARTBEAT = -9 };
 
     Log *       log;
@@ -289,6 +285,8 @@ protected:
     bool        isLifetime()
         { return this->lifetime && par->getCurrtime() > this->lifetime; }
 
+    // This should be called when the Transaction has "completed", or
+    // come to a decision point (not necessarily fully completed).
     Transaction::RESULT completed(bool success)
     {
         if (this->onCompleted)
@@ -320,7 +318,8 @@ protected:
 
 // Use this transaction to handle heartbeat timeotus
 // This will wake up every now and then and send out an AppendEntries
-// to every node (basically runs a GroupUpdateTransaction)
+// to every node (basically runs a GroupUpdateTransaction) if the
+// node is a leader.
 class HeartbeatTimeoutTransaction : public Transaction
 {
 public:
@@ -354,7 +353,6 @@ public:
     void init(const MemberInfo &member);
 
     virtual void start() override;
-    //virtual void close() override;
     virtual Transaction::RESULT onReply(const RawMessage *raw) override;
     virtual Transaction::RESULT onTimeout() override;
 
@@ -365,9 +363,10 @@ protected:
     set<Address> voted;
 
     vector<Address> recipients;
+
     // Returns true if we have received a majority of replies
     // (either success or failure)
-    bool        isMajority()
+    bool isMajority()
         { return (2*yesVotes > totalVotes) || (2*noVotes > totalVotes); }
 
 };
@@ -389,7 +388,6 @@ public:
     void init(const Address& address, int lastIndex, int lastTerm);
 
     virtual void start() override;
-    //virtual void close() override;
     virtual Transaction::RESULT onReply(const RawMessage *raw) override;
     virtual Transaction::RESULT onTimeout() override;
 
@@ -554,6 +552,7 @@ public:
     // Setting the address to the leader is meant for initial
     // cluster startup.  After that, a zero address should be
     // passed in.
+    //
     virtual void start(const Address &leader) override;    
 
     // This is called when a message has been received.  This may be
@@ -567,9 +566,8 @@ public:
     void onAppendEntries(const Address& from, const RawMessage *raw);
     void onRequestVote(const Address& from, const RawMessage *raw);
 
-    // Replies are all handled here.  This is a dispatcher which
-    // calls the separate onXXXReply() callbakcs and also cleans
-    // up the transactions.
+    // Replies are all handled here.  This will dispatch the messages
+    // to their respective transactions.
     void onReply(const Address& from,
                  const HeaderOnlyMessage& header,
                  const RawMessage *raw);
@@ -615,8 +613,7 @@ public:
     // NetworkNode!
     shared_ptr<NetworkNode> node() { return getNetworkNode(); }
 
-    // Broadcasts a message to all members
-    // (skips self).
+    // Broadcasts a message to all members (skips self).
     void broadcast(Message *message);
     void broadcast(Message *message, vector<Address> & recipients);
 
@@ -639,7 +636,9 @@ protected:
     // List of currently open transactions
     map<int, shared_ptr<Transaction>>   transactions;
 
-    // Unique id used to track messages/transactions
+    // Unique id used to track messages/transactions.
+    // Use getNextMessageId() to access this variable. That
+    // API will increment nextMessageId.
     int                     nextMessageId;
 
     // Hwlpful pointers to common timeouts
@@ -650,10 +649,6 @@ protected:
     // If this is not nullptr, then there is an Add/RemoveServer
     // operation going on (only one is allowed at a time).
     shared_ptr<MemberChangeTransaction>  memberchange;
-
-    // Returns true if there is an UpdateTransaction in the
-    // list of transactions.
-    bool isUpdateTransactionInProgress();
 
     shared_ptr<NetworkNode> getNetworkNode()
     {

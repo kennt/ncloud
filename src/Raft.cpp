@@ -140,11 +140,6 @@ void RequestVoteMessage::load(const RawMessage *raw)
     this->lastLogTerm = read_raw<int>(is);
 }
 
-// Converts the data in a RequestVoteReply structure into a RawMessage (which
-// is ready to be sent over the wire).
-//
-// The pointer returned is a unique_ptr<> and should be freed by the caller.
-//
 unique_ptr<RawMessage> RequestVoteReply::toRawMessage(const Address &from,
                                                       const Address& to)
 {
@@ -467,19 +462,19 @@ void GroupUpdateTransaction::start()
         update->parent = shared_from_this();
         update->init(address, this->lastLogIndex, this->lastLogTerm);
 
+        this->handler->addTransaction(update);
+        this->activeChildren[update->transId] = update;
+
         update->start();
         //$ TODO: what should this timeout be?
         update->startTimeout(par->getElectionTimeout());;
-
-        this->activeChildren[update->transId] = update;
-        this->handler->addTransaction(update);
     }
 
 }
 
 Transaction::RESULT GroupUpdateTransaction::onReply(const RawMessage *raw)
 {
-    // SHould not get here, the GroupUpdate does not receive
+    // Should not get here, the GroupUpdate does not receive
     // any messages itself.
     throw AppException("should not be here");
     return Transaction::RESULT::KEEP;
@@ -606,7 +601,6 @@ void MemberChangeTransaction::onServerUpdateCompleted(Transaction *trans,
         // Add the current server to the config
         // (Note that we are still updating only up to the
         // previous configuration). 
-        //this->handler->applyLogEntry(this->command, this->server);
         
         // Shortcut: If there are no recipients go straight to the 
         // next step in the operation.
@@ -627,10 +621,10 @@ void MemberChangeTransaction::onServerUpdateCompleted(Transaction *trans,
     
             this->currentTrans = update;
             this->handler->addTransaction(update);
-    
-            update->setLifetime(par->getCurrtime() + 5*par->getElectionTimeout());
-    
+        
             update->start();
+
+            update->setLifetime(5*par->getElectionTimeout());
         }
     }
     else {
@@ -666,7 +660,6 @@ void MemberChangeTransaction::onPrevConfigCompleted(Transaction *trans,
                 std::remove(recipients.begin(), recipients.end(), this->server),
                 recipients.end());
         }
-
         
         // make the change
         auto update = make_shared<GroupUpdateTransaction>(log, par, handler);
@@ -685,7 +678,7 @@ void MemberChangeTransaction::onPrevConfigCompleted(Transaction *trans,
 
         update->start();        
 
-        update->setLifetime(par->getCurrtime() + 5*par->getElectionTimeout());
+        update->setLifetime(5*par->getElectionTimeout());
     }
     else {
         completed(false);
@@ -776,9 +769,6 @@ void RaftHandler::onMessageReceived(const RawMessage *raw)
     header.load(raw);
 
     if (header.term > node->context.currentTerm) {
-        //$ CHECK: Does this state change happen before
-        // or after RPC handling?  Does this cause the
-        // message handling to continue? or do we drop the msg?
         DEBUG_LOG(connection_->address(),
             "new term(%d->%d)! converting to follower",
             node->context.currentTerm, header.term);
@@ -946,7 +936,7 @@ void RaftHandler::onChangeServerCommand(shared_ptr<CommandMessage> message,
         trans->commandMessage = message;
 
         this->memberchange = trans;
-        this->transactions[trans->transId] = trans;
+        this->addTransaction(trans);
 
         // Get this started!
         trans->start();
@@ -1002,10 +992,12 @@ void RaftHandler::onTimeout()
             update->init(node->member,
                          node->context.getLastLogIndex(),
                          node->context.getLastLogTerm());
+            this->addTransaction(update);
+
             update->start();
 
+            update->setLifetime(5*par->getElectionTimeout());
             update->startTimeout(par->idleTimeout);
-            this->addTransaction(update);
 
             node->context.setLogChanged(false);
 

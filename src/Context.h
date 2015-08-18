@@ -20,16 +20,11 @@
 #include "Params.h"
 #include "Network.h"
 #include "Member.h"
-#include "Util.h"
-
-class ContextStoreInterface;
-class NetworkNode;
 
 
 namespace Raft {
 
-class Transaction;
-class ElectionTransaction;
+class RaftHandler;
 
 // ================
 // System states (for the state table)
@@ -73,9 +68,8 @@ enum Command {
 // ================
 
 // Since we are using Raft only for the membership protocol,
-// We are only storing only the membership information in the
-// log.
-// This are the contents of an individual log entry.
+// We are only storing only the membership information in the log.
+// These are the contents of an individual log entry.
 struct RaftLogEntry {
     // term when the entry was received by the leader
     int         termReceived;
@@ -84,9 +78,6 @@ struct RaftLogEntry {
     // membership, we are storing a delta of changes to the 
     // cluster membership. (nodes added and node deleted).
     //
-    // We could store the entire list, but I think this makes
-    // it more interesting to see how things work.
-    // 
 
     // The operation being performed.
     Raft::Command     command;
@@ -101,7 +92,6 @@ struct RaftLogEntry {
         : termReceived(term), command(command), address(addr)
     {}
 
-    // Used for load/save for messages
     void write(stringstream& ss);
     void read(istringstream& is);
 };
@@ -113,7 +103,6 @@ struct RaftLogEntry {
 // are being stored).
 //
 // The entire context is read/written at once.
-//
 // ==================
 class ContextStoreInterface
 {
@@ -138,9 +127,6 @@ public:
 // ==================
 // Provides the basic interface to store the context
 // to a file in the filesystem.
-//
-//$ TODO: Right now this doe a full overwrite of the log instead
-// of just appending.
 // ==================
 class FileBasedContextStore : public ContextStoreInterface
 {
@@ -200,8 +186,6 @@ public:
 // information into one place, instead of members in the
 // RaftHandler.
 // ==================
-class RaftHandler;
-
 struct Context
 {
     Context(Log *log, Params *par) : par(par), log(log),
@@ -217,7 +201,6 @@ struct Context
     // ==================
     // Implementation variables
     // ==================
-
     Params *                par;
     Log *                   log;
 
@@ -237,7 +220,6 @@ struct Context
     // ==================
     // Volatile state stored on all servers
     // ==================
-
     State       currentState;
 
     // Index of highest log entry known to be committed
@@ -306,6 +288,7 @@ struct Context
     // Perform any actions/checking of the timeout
     void onTimeout();
 
+    // Call this when switching to a candidate
     void startElection(const MemberInfo& member);
 
     // Add new entries to the log, if an old entry conflicts they will
@@ -330,7 +313,7 @@ struct Context
 
     // Check to see if the commitIndex needs to be updated.
     // Call this whenever a change is made to any of the matchIndex
-    // values
+    // values.  This will update the commitInde if needed.
     void checkCommitIndex(int sentLogIndex);
 };
 
