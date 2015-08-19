@@ -208,7 +208,7 @@ void handleNodeUpdates(shared_ptr<MockNetwork> network,
                        const vector<Address>& nodes)
 {
     // Have each node pull off data
-    vector<int>     logTerms;
+    vector<TERM>     logTerms;
     AppendEntriesMessage append;
     AppendEntriesReply reply;
 
@@ -240,7 +240,6 @@ void handleNodeUpdates(shared_ptr<MockNetwork> network,
             runMessageLoop(netnode, par, 0);
         }
     }
-
 }
 
 // Server state testing (see if the Raft states transition
@@ -325,7 +324,6 @@ TEST_CASE("Raft state testing", "[raft][state]")
         nodes.emplace_back(0x64656667, 8200);
 
         initializeStore(store, leaderAddr, nodes);
-
         auto nettuple = createNode(network,
                                    &params,
                                    &store,
@@ -536,7 +534,7 @@ TEST_CASE("Raft single-node startup", "[raft][startup]")
         netnode->nodeStart(Address(), 10);
 
         // Check the startup state
-        int term = netnode->context.currentTerm;
+        TERM term = netnode->context.currentTerm;
         REQUIRE(netnode->context.currentTerm == 0);
         REQUIRE(netnode->context.currentState == State::FOLLOWER);
 
@@ -1461,7 +1459,7 @@ TEST_CASE("Raft elections", "[raft][election][system]")
         REQUIRE(nodes[1]->context.currentState == State::LEADER);
         REQUIRE(nodes[2]->context.currentState == State::FOLLOWER);
         REQUIRE(nodes[3]->context.currentState == State::FOLLOWER);
-        REQUIRE(nodes[4]->context.currentState == State::FOLLOWER);
+        REQUIRE(nodes[4]->context.currentState == State::FOLLOWER);        
     }
 }
 

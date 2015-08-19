@@ -26,6 +26,9 @@ namespace Raft {
 
 class RaftHandler;
 
+using INDEX = unsigned long;
+using TERM = unsigned long;
+
 // ================
 // System states (for the state table)
 // ================
@@ -72,7 +75,7 @@ enum Command {
 // These are the contents of an individual log entry.
 struct RaftLogEntry {
     // term when the entry was received by the leader
-    int         termReceived;
+    TERM            termReceived;
 
     // Since we are only using the Raft protocol for cluster
     // membership, we are storing a delta of changes to the 
@@ -88,7 +91,7 @@ struct RaftLogEntry {
     RaftLogEntry() : termReceived(0), command(Command::CMD_NOOP)
     {}
 
-    RaftLogEntry(int term, Raft::Command command, const Address& addr)
+    RaftLogEntry(TERM term, Raft::Command command, const Address& addr)
         : termReceived(term), command(command), address(addr)
     {}
 
@@ -224,11 +227,11 @@ struct Context
 
     // Index of highest log entry known to be committed
     // (initialized to 0, increases monotonically)
-    int         commitIndex;
+    INDEX       commitIndex;
 
     // Index of highest log entry applied
     // (initialized to 0, increase monotonically)
-    int         lastAppliedIndex;
+    INDEX       lastAppliedIndex;
 
     // Current leader address
     Address     currentLeader;
@@ -239,7 +242,7 @@ struct Context
     // ==================
     // The latest term that this server has seen (initialized to 0 on
     // first boot, increases monotonically).
-    int         currentTerm;
+    TERM        currentTerm;
 
     // Candidate that received a vote in the current term (or null if none)
     Address     votedFor;
@@ -266,15 +269,15 @@ struct Context
     struct LeaderStateEntry {
         // Index of the next log entry to send to this server
         // (initialized to leader last log index + 1)
-        int         nextIndex;
+        INDEX       nextIndex;
 
         // Index of highest log entry known to be replicated on
         // server (initialized to 0, increases monotonically)
-        int         matchIndex;
+        INDEX       matchIndex;
 
         LeaderStateEntry() : nextIndex(0), matchIndex(0)
         {}
-        LeaderStateEntry(int next, int match)
+        LeaderStateEntry(INDEX next, INDEX match)
             : nextIndex(next), matchIndex(match)
         {}
     };
@@ -294,7 +297,7 @@ struct Context
     // Add new entries to the log, if an old entry conflicts they will
     // remove the conflict and all succeeding entries. Appends new
     // entries to the log after that.
-    void addEntries(int startIndex, vector<RaftLogEntry> & entries);
+    void addEntries(INDEX startIndex, vector<RaftLogEntry> & entries);
 
     // Applies committed but not-yet-applied entries
     void applyCommittedEntries();
@@ -304,8 +307,8 @@ struct Context
     void switchToCandidate();
     void switchToFollower();
 
-    int getLastLogIndex()   { return static_cast<int>(this->logEntries.size() - 1); }
-    int getLastLogTerm()    { return this->logEntries.back().termReceived; }
+    INDEX getLastLogIndex()   { return static_cast<int>(this->logEntries.size() - 1); }
+    TERM getLastLogTerm()    { return this->logEntries.back().termReceived; }
 
     // Use this to trigger sending of log updates
     bool logChanged() const { return logChanged_; }
@@ -314,7 +317,7 @@ struct Context
     // Check to see if the commitIndex needs to be updated.
     // Call this whenever a change is made to any of the matchIndex
     // values.  This will update the commitInde if needed.
-    void checkCommitIndex(int sentLogIndex);
+    void checkCommitIndex(INDEX sentLogIndex);
 };
 
 
@@ -327,16 +330,16 @@ class SanityTestLog
 public:
     vector<RaftLogEntry>    entries;
     set<Address>    servers;
-    int             lastTermSeen;
+    TERM            lastTermSeen;
 
-    SanityTestLog() : lastTermSeen(-1) {}
+    SanityTestLog() : lastTermSeen(0) {}
 
     // Performs basically the following:
     // for (int i=0; i<count; i++)
     //      validate entries[start+i]
     //
     void validateLogEntries(const vector<RaftLogEntry> &entries,
-                            int start, int count);
+                            INDEX start, INDEX count);
 };
 
 

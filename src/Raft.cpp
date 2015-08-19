@@ -21,15 +21,15 @@ void Raft::Message::write(stringstream& ss)
     assert(this->transId);
     assert(this->term);
     write_raw<int>(ss, static_cast<int>(this->msgtype));
-    write_raw<int>(ss, this->transId);
-    write_raw<int>(ss, this->term);    
+    write_raw<unsigned int>(ss, this->transId);
+    write_raw<TERM>(ss, this->term);    
 }
 
 void Raft::Message::read(istringstream& is)
 {
     this->msgtype = static_cast<MessageType>(read_raw<int>(is));
-    this->transId = read_raw<int>(is);
-    this->term = read_raw<int>(is);
+    this->transId = read_raw<unsigned int>(is);
+    this->term = read_raw<TERM>(is);
 }
 
 MessageType Raft::Message::getMessageType(const byte *data, size_t dataSize)
@@ -60,9 +60,9 @@ unique_ptr<RawMessage> AppendEntriesMessage::toRawMessage(const Address &from,
     this->write(ss);
 
     write_raw<Address>(ss, this->leaderAddress);
-    write_raw<int>(ss, this->prevLogIndex);
-    write_raw<int>(ss, this->prevLogTerm);
-    write_raw<int>(ss, this->leaderCommit);
+    write_raw<INDEX>(ss, this->prevLogIndex);
+    write_raw<TERM>(ss, this->prevLogTerm);
+    write_raw<INDEX>(ss, this->leaderCommit);
     write_raw<int>(ss, static_cast<int>(this->entries.size()));
     for (auto & logEntry : entries) {
         logEntry.write(ss);
@@ -79,9 +79,9 @@ void AppendEntriesMessage::load(const RawMessage *raw)
     assert(this->msgtype == MessageType::APPEND_ENTRIES);
 
     this->leaderAddress = read_raw<Address>(is);
-    this->prevLogIndex = read_raw<int>(is);
-    this->prevLogTerm = read_raw<int>(is);
-    this->leaderCommit = read_raw<int>(is);
+    this->prevLogIndex = read_raw<INDEX>(is);
+    this->prevLogTerm = read_raw<TERM>(is);
+    this->leaderCommit = read_raw<INDEX>(is);
 
     size_t size = static_cast<size_t>(read_raw<int>(is));
     this->entries.clear();
@@ -122,8 +122,8 @@ unique_ptr<RawMessage> RequestVoteMessage::toRawMessage(const Address &from,
     this->write(ss);
 
     write_raw<Address>(ss, this->candidate);
-    write_raw<int>(ss, this->lastLogIndex);
-    write_raw<int>(ss, this->lastLogTerm);
+    write_raw<INDEX>(ss, this->lastLogIndex);
+    write_raw<TERM>(ss, this->lastLogTerm);
 
     return rawMessageFromStream(from, to, ss);
 }
@@ -136,8 +136,8 @@ void RequestVoteMessage::load(const RawMessage *raw)
     assert(this->msgtype == MessageType::REQUEST_VOTE);
 
     this->candidate = read_raw<Address>(is);
-    this->lastLogIndex = read_raw<int>(is);
-    this->lastLogTerm = read_raw<int>(is);
+    this->lastLogIndex = read_raw<INDEX>(is);
+    this->lastLogTerm = read_raw<TERM>(is);
 }
 
 unique_ptr<RawMessage> RequestVoteReply::toRawMessage(const Address &from,
@@ -175,11 +175,6 @@ shared_ptr<NetworkNode> Transaction::getNetworkNode()
 
 void ElectionTimeoutTransaction::start()
 {
-}
-
-void ElectionTimeoutTransaction::close()
-{
-    Transaction::close();
 }
 
 Transaction::RESULT ElectionTimeoutTransaction::onReply(const RawMessage *raw)
@@ -235,11 +230,6 @@ void HeartbeatTimeoutTransaction::sendGroupHeartbeat()
 void HeartbeatTimeoutTransaction::start()
 {
     sendGroupHeartbeat();
-}
-
-void HeartbeatTimeoutTransaction::close()
-{
-    Transaction::close();
 }
 
 Transaction::RESULT HeartbeatTimeoutTransaction::onReply(const RawMessage *raw)
@@ -316,7 +306,7 @@ Transaction::RESULT ElectionTransaction::onTimeout()
     return completed(false);
 }
 
-void UpdateTransaction::init(const Address& address, int logIndex, int logTerm)
+void UpdateTransaction::init(const Address& address, INDEX logIndex, TERM logTerm)
 {
     this->recipient = address;
     this->lastLogIndex = logIndex;
@@ -377,7 +367,7 @@ Transaction::RESULT UpdateTransaction::onTimeout()
     return Transaction::RESULT::KEEP;
 }
 
-void UpdateTransaction::sendAppendEntriesRequest(int index)
+void UpdateTransaction::sendAppendEntriesRequest(INDEX index)
 {
     auto node = getNetworkNode();
 
@@ -393,7 +383,7 @@ void UpdateTransaction::sendAppendEntriesRequest(int index)
     append.prevLogTerm = node->context.logEntries[index].termReceived;
     append.leaderCommit = node->context.commitIndex;
 
-    if ((index >= 0) && (index < (node->context.logEntries.size()-1))) {
+    if (index < (node->context.logEntries.size()-1)) {
         //$ TODO: look into sending more than one entry at a time
         append.entries.push_back(node->context.logEntries[index+1]);
     }
@@ -405,7 +395,7 @@ void UpdateTransaction::sendAppendEntriesRequest(int index)
     handler->connection()->send(raw.get());    
 }
 
-void GroupUpdateTransaction::init(const MemberInfo& member, int lastIndex, int lastTerm)
+void GroupUpdateTransaction::init(const MemberInfo& member, INDEX lastIndex, TERM lastTerm)
 {
     vector<Address> members;
     for (auto & elem : member.memberList)
@@ -413,7 +403,7 @@ void GroupUpdateTransaction::init(const MemberInfo& member, int lastIndex, int l
     this->init(members, lastIndex, lastTerm);
 }
 
-void GroupUpdateTransaction::init(const vector<Address>& members, int lastIndex, int lastTerm)
+void GroupUpdateTransaction::init(const vector<Address>& members, INDEX lastIndex, TERM lastTerm)
 {
     auto node = getNetworkNode();
 
@@ -433,13 +423,6 @@ void GroupUpdateTransaction::init(const vector<Address>& members, int lastIndex,
 void GroupUpdateTransaction::close()
 {
     Transaction::close();
-
-    // Close and remove all active child transactions
-    for (auto & elem : this->activeChildren) {
-        elem.second->close();
-        this->handler->removeTransaction(elem.first);
-    }
-    this->activeChildren.clear();
 }
 
 void GroupUpdateTransaction::start()
@@ -463,7 +446,6 @@ void GroupUpdateTransaction::start()
         update->init(address, this->lastLogIndex, this->lastLogTerm);
 
         this->handler->addTransaction(update);
-        this->activeChildren[update->transId] = update;
 
         update->start();
         //$ TODO: what should this timeout be?
@@ -509,7 +491,7 @@ void GroupUpdateTransaction::onChildCompleted(Transaction *trans, bool success)
     successVotes += (success ? 1 : 0);
     failureVotes += (success ? 0 : 1);
 
-    this->activeChildren.erase(trans->transId);
+    trans->close();
     this->handler->removeTransaction(trans->transId);
 
     if (isMajority() && this->onCompleted) {
@@ -830,7 +812,7 @@ void RaftHandler::onAppendEntries(const Address& from, const RawMessage *raw)
         if (message->leaderCommit > node->context.commitIndex) {
             node->context.commitIndex = 
                 std::min(message->leaderCommit,
-                         (int)(message->prevLogIndex + message->entries.size()));
+                         (message->prevLogIndex + message->entries.size()));
             node->context.applyCommittedEntries();
         }
 
@@ -1054,7 +1036,7 @@ void RaftHandler::applyLogEntries(const vector<RaftLogEntry> &entries)
 // Compare according to 3.6.1
 // Compare the last terms, larger term is more current
 // If terms are equal, compare the length
-bool RaftHandler::isLogCurrent(int index, int term)
+bool RaftHandler::isLogCurrent(INDEX index, TERM term)
 {
     auto node = getNetworkNode();
 
@@ -1120,13 +1102,13 @@ void RaftHandler::initTimeoutTransactions()
 
     // Create the transaction for the election timeout
     auto trans = make_shared<ElectionTimeoutTransaction>(this->log, this->par, this);
-    trans->transId = Transaction::INDEX::ELECTION;
+    trans->transId = Transaction::SPECIALINDEX::ELECTION;
     transactions[trans->transId] = trans;
     this->election = trans;
 
     // Create the transaction for the heartbeat timeout
     auto heartbeat = make_shared<HeartbeatTimeoutTransaction>(this->log, this->par, this);
-    heartbeat->transId = Transaction::INDEX::HEARTBEAT;
+    heartbeat->transId = Transaction::SPECIALINDEX::HEARTBEAT;
     transactions[heartbeat->transId] = heartbeat;
     this->heartbeat = heartbeat;
 }

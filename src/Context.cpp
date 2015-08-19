@@ -18,14 +18,14 @@ using std::placeholders::_2;
 void RaftLogEntry::write(stringstream& ss)
 {
     //$ TODO: Do I need to truncate the stream first?
-    write_raw<int>(ss, this->termReceived);
+    write_raw<TERM>(ss, this->termReceived);
     write_raw<int>(ss, static_cast<int>(this->command));
     write_raw<Address>(ss, this->address);
 }
 
 void RaftLogEntry::read(istringstream& is)
 {
-    this->termReceived = read_raw<int>(is);
+    this->termReceived = read_raw<TERM>(is);
     this->command = static_cast<Command>(read_raw<int>(is));
     this->address = read_raw<Address>(is);
 }
@@ -178,14 +178,14 @@ void Context::saveToStore()
 
     Json::Value root;
 
-    root["currentTerm"] = this->currentTerm;
+    root["currentTerm"] = static_cast<Json::UInt>(this->currentTerm);
     root["votedFor"] = this->votedFor.toAddressString();
     root["votedForPort"] = this->votedFor.getPort();
 
     Json::Value log;
     for (auto & entry: this->logEntries) {
         Json::Value logEntry;
-        logEntry["term"] = entry.termReceived;
+        logEntry["term"] = static_cast<Json::UInt>(entry.termReceived);
         logEntry["command"] = static_cast<int>(entry.command);
         logEntry["address"] = entry.address.toAddressString();
         logEntry["port"] = entry.address.getPort();
@@ -246,10 +246,10 @@ void Context::startElection(const MemberInfo& member)
     election->startTimeout(this->handler->getElectionTimeout());
 }
 
-void Context::addEntries(int startIndex, vector<RaftLogEntry> & entries)
+void Context::addEntries(INDEX startIndex, vector<RaftLogEntry> & entries)
 {
     // At most we are appending all new entries
-    if (startIndex < 0 || startIndex > this->logEntries.size()) {
+    if (startIndex > this->logEntries.size()) {
         throw AppException("Context log index out-of-range");
     }
 
@@ -321,7 +321,7 @@ void Context::addEntries(int startIndex, vector<RaftLogEntry> & entries)
 void Context::applyCommittedEntries()
 {
     if (this->commitIndex > this->lastAppliedIndex) {
-        for (int i=this->lastAppliedIndex; i<=this->commitIndex; i++) {
+        for (INDEX i=this->lastAppliedIndex; i<=this->commitIndex; i++) {
             // Apply log entries to match
             this->handler->applyLogEntry(this->logEntries[i]);
         }
@@ -346,7 +346,7 @@ void Context::switchToFollower()
     this->currentState = State::FOLLOWER;
 }
 
-void Context::checkCommitIndex(int sentLogIndex)
+void Context::checkCommitIndex(INDEX sentLogIndex)
 {
     if (this->commitIndex >= sentLogIndex)
         return;
@@ -363,7 +363,7 @@ void Context::checkCommitIndex(int sentLogIndex)
 }
 
 void SanityTestLog::validateLogEntries(const vector<RaftLogEntry>& entries,
-                                       int start, int count)
+                                       INDEX start, INDEX count)
 {
     for (int i=0; i<count; i++) {
         auto & entry = entries[start+i];

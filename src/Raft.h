@@ -52,7 +52,7 @@ class Message
 public:
     MessageType     msgtype;
     int             transId;
-    int             term;
+    TERM            term;
 
     Message(MessageType mt) : msgtype(mt), transId(0), term(0) {}
 
@@ -100,17 +100,17 @@ public:
     Address     leaderAddress;
 
     // index of log entry immediately preceding new ones
-    int         prevLogIndex;
+    INDEX       prevLogIndex;
 
     // term of prevLogIndex entry
-    int         prevLogTerm;
+    TERM        prevLogTerm;
 
     // Log entries to store (empty for heartbeat, may send
     // more than one for efficiency)
     vector<RaftLogEntry>  entries;
 
     // leader's commit index
-    int         leaderCommit;
+    INDEX       leaderCommit;
 
     AppendEntriesMessage() : Message(APPEND_ENTRIES),
         prevLogIndex(0), prevLogTerm(0), leaderCommit(0)
@@ -146,10 +146,10 @@ public:
     Address     candidate;
 
     // index of candidate's last log entry
-    int         lastLogIndex;
+    INDEX       lastLogIndex;
 
     // term of candidate's last log entry
-    int         lastLogTerm;
+    TERM        lastLogTerm;
 
     
     RequestVoteMessage() : Message(REQUEST_VOTE), lastLogIndex(0), lastLogTerm(0)
@@ -192,7 +192,7 @@ public:
 
     // These are special indexes. These transactions are special in
     // that they always exist (though may not be active).
-    enum INDEX { ELECTION = -10, HEARTBEAT = -9 };
+    enum SPECIALINDEX { ELECTION = -10, HEARTBEAT = -9 };
 
     Log *       log;
     Params *    par;
@@ -200,17 +200,16 @@ public:
     // This is ususally the message transId, but may be
     // set to a negative value (for non-message transactions).
     int         transId;
-    int         term;
+    TERM        term;
 
     RaftHandler *    handler;
 
     Transaction(Log *log, Params *par, RaftHandler *handler)
         : log(log), par(par), transId(0), term(0), handler(handler),
         timeStart(-1), timeout(0), nTimeouts(1), lifetime(0)
-    {
-    }
+    {}
 
-    virtual ~Transaction() {}
+    virtual ~Transaction() { close(); }
 
     // Call this to get the transaction started (usually sends off some
     // kind of message).
@@ -309,7 +308,6 @@ public:
     {}
 
     virtual void start() override;
-    virtual void close() override;
     virtual Transaction::RESULT onReply(const RawMessage *raw) override;
     virtual Transaction::RESULT onTimeout() override;
 
@@ -328,7 +326,6 @@ public:
     {}
 
     virtual void start() override;
-    virtual void close() override;
     virtual Transaction::RESULT onReply(const RawMessage *raw) override;
     virtual Transaction::RESULT onTimeout() override;
 
@@ -385,7 +382,7 @@ public:
         lastSentLogIndex(0), lastSentLogTerm(0)
     {}
 
-    void init(const Address& address, int lastIndex, int lastTerm);
+    void init(const Address& address, INDEX lastIndex, TERM lastTerm);
 
     virtual void start() override;
     virtual Transaction::RESULT onReply(const RawMessage *raw) override;
@@ -397,14 +394,14 @@ protected:
     Address     recipient;
 
     // We are trying to catch up the logs to these values.
-    int         lastLogIndex;
-    int         lastLogTerm;
+    INDEX       lastLogIndex;
+    TERM        lastLogTerm;
 
     // The values that were in the last appendEntries request
-    int         lastSentLogIndex;
-    int         lastSentLogTerm;
+    INDEX       lastSentLogIndex;
+    TERM        lastSentLogTerm;
 
-    void        sendAppendEntriesRequest(int index);
+    void        sendAppendEntriesRequest(INDEX index);
 };
 
 
@@ -423,11 +420,9 @@ public:
         lastLogIndex(0), lastLogTerm(0),
         totalVotes(0), successVotes(0), failureVotes(0)
     {}
-    virtual ~GroupUpdateTransaction()
-    {}
 
-    void init(const MemberInfo& member, int lastIndex, int lastTerm);
-    void init(const vector<Address> &members, int lastIndex, int lastTerm);
+    void init(const MemberInfo& member, INDEX lastIndex, TERM lastTerm);
+    void init(const vector<Address> &members, INDEX lastIndex, TERM lastTerm);
 
     virtual void start() override;
     virtual void close() override;
@@ -435,8 +430,8 @@ public:
     virtual Transaction::RESULT onTimeout() override;
 
 protected:
-    int     lastLogIndex;
-    int     lastLogTerm;
+    INDEX   lastLogIndex;
+    TERM    lastLogTerm;
 
     // Recipients that have said they were completed
     // (keeps track of nodes that have replied)
@@ -474,8 +469,6 @@ public:
         : Transaction(log, par, handler),
         lastLogTerm(0), lastLogIndex(0)
     {}
-    virtual ~MemberChangeTransaction()
-    {}
 
     // The address of the server being added/deleted
     Address     server;
@@ -483,8 +476,8 @@ public:
     shared_ptr<CommandMessage> commandMessage;
 
     // We are trying to catch up the logs to these values.
-    int         lastLogTerm;
-    int         lastLogIndex;
+    TERM        lastLogTerm;
+    INDEX       lastLogIndex;
 
     void init(const MemberInfo& member);
 
@@ -540,7 +533,7 @@ public:
     {
     };
 
-    virtual ~RaftHandler() {};
+    virtual ~RaftHandler() { transactions.clear(); };
 
     // Initializes the MessageHandler, if needed. This will be called
     // before onMessageReceived() or onTimeout() will be called.
@@ -602,7 +595,7 @@ public:
 
     // Returns true if the request (represented by the parameters)
     // is more current than our log.
-    bool isLogCurrent(int index, int term);
+    bool isLogCurrent(INDEX index, TERM term);
 
     int getNextMessageId() { return ++nextMessageId; }
     Address address() { return connection_->address(); }
