@@ -40,7 +40,9 @@ enum MessageType {
     APPEND_ENTRIES,
     APPEND_ENTRIES_REPLY,
     REQUEST_VOTE,
-    REQUEST_VOTE_REPLY
+    REQUEST_VOTE_REPLY,
+    INSTALL_SNAPSHOT,
+    INSTALL_SNAPSHOT_REPLY
 };
 
 // ==================
@@ -174,6 +176,53 @@ public:
     virtual void load(const RawMessage *raw) override;
     virtual unique_ptr<RawMessage> toRawMessage(const Address& from,
                                                 const Address& to) override;
+};
+
+class InstallSnapshotMessage : public Message
+{
+public:
+    // Implied MessageType::INSTALL_SNAPSHOT
+
+    // so the follower can redirect clients
+    Address     leaderAddress;
+
+    // the snapshot replaces all entries up through and including
+    // this index
+    INDEX       lastIndex;
+
+    // Term of the lastIndex
+    TERM        lastTerm;
+
+    // For us, the config is the same as the snapshot
+    // This may be a subset of addresses
+    // Starting position for the address vector (since we may be
+    // sending a subset of addresses at a time).
+    unsigned int offset;
+    vector<Address> addresses;
+
+    // true if this is the last chunk
+    bool        done;
+
+    InstallSnapshotMessage() : Message(INSTALL_SNAPSHOT),
+        lastIndex(0), lastTerm(0), offset(0), done(false)
+    {}
+
+    virtual void load(const RawMessage *raw) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from,
+                                                const Address& to) override;
+};
+
+class InstallSnapshotReply : public Message
+{
+public:
+    // Implied MessageType::INSTALL_SNAPSHOT_REPLY
+
+    InstallSnapshotReply() : Message(INSTALL_SNAPSHOT_REPLY)
+    {}
+
+    virtual void load(const RawMessage *raw) override;
+    virtual unique_ptr<RawMessage> toRawMessage(const Address& from,
+                                                const Address& to) override;    
 };
 
 // Transactions are used to track RPCs and their replies.  This are
@@ -379,7 +428,7 @@ public:
     UpdateTransaction(Log *log, Params *par, RaftHandler *handler)
         : Transaction(log, par, handler),
         lastLogIndex(0), lastLogTerm(0),
-        lastSentLogIndex(0), lastSentLogTerm(0)
+        lastSentLogIndex(0), lastSentLogTerm(0), offset(0)
     {}
 
     void init(const Address& address, INDEX lastIndex, TERM lastTerm);
@@ -400,6 +449,11 @@ protected:
     // The values that were in the last appendEntries request
     INDEX       lastSentLogIndex;
     TERM        lastSentLogTerm;
+
+    // snapshot support
+    // The beginning index of the next set of data to send
+    unsigned int offset;
+    shared_ptr<Snapshot> snapshot;
 
     void        sendAppendEntriesRequest(INDEX index);
 };
@@ -442,7 +496,6 @@ protected:
 
     // Full set of recipients
     vector<Address> recipients;
-    map<int, shared_ptr<UpdateTransaction>> activeChildren;
 
     // Returns true if we have received a majority of either
     // yes or no replies.
@@ -558,6 +611,7 @@ public:
     // Handlers for the individual messages
     void onAppendEntries(const Address& from, const RawMessage *raw);
     void onRequestVote(const Address& from, const RawMessage *raw);
+    void onInstallSnapshot(const Address &from, const RawMessage *raw);
 
     // Replies are all handled here.  This will dispatch the messages
     // to their respective transactions.

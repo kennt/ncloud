@@ -72,11 +72,23 @@ public:
     // idle periods.  This should be less than the electionTimeout
     // so that we are sure to send out heartbeats to prevent
     // unnecessary elections.
+    // (defaut: 0)
     int     idleTimeout;
 
     // Length of time allowed for an RPC request. The RPC
     // will be resent if a reply is not receive within this timeout.
+    // (default: 0)
     int     rpcTimeout;
+
+    // The max number of entries that we can send in a snapshot
+    // (if this is -1, then this is ignored).
+    // (default: -1)
+    int     maxSnapshotSize;
+
+    // IF the number of logEntries exceeds this threshold, then the
+    // log is snapshotted (if this is -1, then this is ignored)
+    // (default: -1)
+    int     logCompactionThreshold;
 
     // =====
     // End - RAFT PARAMS

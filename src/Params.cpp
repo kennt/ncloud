@@ -28,6 +28,8 @@ Params::Params():
     electionTimeout(0),
     idleTimeout(0),
     rpcTimeout(0),
+    maxSnapshotSize(-1),
+    logCompactionThreshold(-1),
     globaltime(0)
 {}
 
@@ -69,6 +71,8 @@ void Params::load(const char *config_file) {
         electionTimeout = root.get("electionTimeout", 0).asInt();
         idleTimeout = root.get("idleTimeout", 0).asInt();
         rpcTimeout = root.get("rpcTimeout", 0).asInt();
+        maxSnapshotSize = root.get("maxSnapshotSize", -1).asInt();
+        logCompactionThreshold = root.get("logCompactionThreshold", -1).asInt();
     }
     catch(exception & e) {
         throw AppException(string_format("Error reading in the config file: %s : %s",

@@ -183,6 +183,27 @@ public:
 };
 
 
+
+// ==================
+// Stores a snapshot of the "state machine".
+// This is stored separately so that each transaction that
+// sends a snapshot will keep a shared_ptr to this object.
+// (Allows me to generate a snapshot without interrupting
+// ongoing snapshot trnasactions).
+// ==================
+struct Snapshot
+{
+    vector<Address> prevMembers;
+
+    // Location information
+    INDEX           prevIndex;
+    TERM            prevTerm;
+
+    Snapshot() : prevIndex(0), prevTerm(0)
+    {}
+};
+
+
 // ==================
 // Encapsulates all the state needed by the Raft algorithm.
 // This is purely a way to aggregate all of the state
@@ -256,6 +277,9 @@ struct Context
     // confusion).    
     vector<RaftLogEntry>    logEntries;
     bool                    logChanged_;
+
+    // Snapshot information
+    shared_ptr<Snapshot>    currentSnapshot;
 
     // Serialization APIs
     void saveToStore();

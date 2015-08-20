@@ -58,12 +58,11 @@ unique_ptr<RawMessage> AppendEntriesMessage::toRawMessage(const Address &from,
     stringstream    ss;
 
     this->write(ss);
-
     write_raw<Address>(ss, this->leaderAddress);
     write_raw<INDEX>(ss, this->prevLogIndex);
     write_raw<TERM>(ss, this->prevLogTerm);
     write_raw<INDEX>(ss, this->leaderCommit);
-    write_raw<int>(ss, static_cast<int>(this->entries.size()));
+    write_raw<unsigned int>(ss, this->entries.size());
     for (auto & logEntry : entries) {
         logEntry.write(ss);
     }
@@ -83,7 +82,7 @@ void AppendEntriesMessage::load(const RawMessage *raw)
     this->prevLogTerm = read_raw<TERM>(is);
     this->leaderCommit = read_raw<INDEX>(is);
 
-    size_t size = static_cast<size_t>(read_raw<int>(is));
+    size_t size = read_raw<unsigned int>(is);
     this->entries.clear();
     for (size_t i=0; i<size; i++) {
         RaftLogEntry    logEntry;
@@ -98,7 +97,6 @@ unique_ptr<RawMessage> AppendEntriesReply::toRawMessage(const Address &from,
     stringstream    ss;
 
     this->write(ss);
-
     write_raw<bool>(ss, this->success);
 
     return rawMessageFromStream(from, to, ss);
@@ -120,7 +118,6 @@ unique_ptr<RawMessage> RequestVoteMessage::toRawMessage(const Address &from,
     stringstream    ss;
 
     this->write(ss);
-
     write_raw<Address>(ss, this->candidate);
     write_raw<INDEX>(ss, this->lastLogIndex);
     write_raw<TERM>(ss, this->lastLogTerm);
@@ -146,7 +143,6 @@ unique_ptr<RawMessage> RequestVoteReply::toRawMessage(const Address &from,
     stringstream    ss;
 
     this->write(ss);
-
     write_raw<bool>(ss, this->voteGranted);
 
     return rawMessageFromStream(from, to, ss);
@@ -160,6 +156,61 @@ void RequestVoteReply::load(const RawMessage *raw)
     assert(this->msgtype == MessageType::REQUEST_VOTE_REPLY);
 
     this->voteGranted = read_raw<bool>(is);
+}
+
+unique_ptr<RawMessage> InstallSnapshotMessage::toRawMessage(const Address& from,
+                                                            const Address& to)
+{
+    stringstream    ss;
+
+    this->write(ss);
+    write_raw<Address>(ss, this->leaderAddress);
+    write_raw<INDEX>(ss, this->lastIndex);
+    write_raw<TERM>(ss, this->lastTerm);
+    write_raw<unsigned int>(ss, this->addresses.size());
+    for (auto & addr : this->addresses) {
+        write_raw<Address>(ss, addr);
+    }
+    write_raw<bool>(ss, this->done);
+
+    return rawMessageFromStream(from, to, ss);
+}
+void InstallSnapshotMessage::load(const RawMessage *raw)
+{
+    istringstream is(std::string((const char *)raw->data.get(), raw->size));
+
+    this->read(is);
+    assert(this->msgtype == MessageType::INSTALL_SNAPSHOT);
+
+    this->leaderAddress = read_raw<Address>(is);
+    this->lastIndex = read_raw<INDEX>(is);
+    this->lastTerm = read_raw<TERM>(is);
+
+    size_t count = read_raw<unsigned int>(is);
+    this->addresses.clear();
+    for (size_t i=0; i<count; i++) {
+        Address addr = read_raw<Address>(is);
+        this->addresses.push_back(addr);
+    }
+    this->done = read_raw<bool>(is);
+}
+
+unique_ptr<RawMessage> InstallSnapshotReply::toRawMessage(const Address& from,
+                                                          const Address& to)
+{
+    stringstream ss;
+
+    this->write(ss);
+
+    return rawMessageFromStream(from, to, ss);
+}
+
+void InstallSnapshotReply::load(const RawMessage *raw)
+{
+    istringstream is(std::string((const char *)raw->data.get(), raw->size));
+
+    this->read(is);
+    assert(this->msgtype == MessageType::INSTALL_SNAPSHOT_REPLY);
 }
 
 void Transaction::close()
@@ -375,24 +426,58 @@ void UpdateTransaction::sendAppendEntriesRequest(INDEX index)
     if (index > node->context.followers[recipient].nextIndex)
         index = node->context.followers[recipient].nextIndex;
 
-    AppendEntriesMessage append;
-    append.transId = this->transId;
-    append.term = node->context.currentTerm;
-    append.leaderAddress = handler->address();
-    append.prevLogIndex = index;
-    append.prevLogTerm = node->context.logEntries[index].termReceived;
-    append.leaderCommit = node->context.commitIndex;
+    shared_ptr<Snapshot> snapshot;
+    // If we are using a snapshot, use that, else use current context
+    if (this->snapshot)
+        snapshot = this->snapshot;
+    else
+        snapshot = node->context.currentSnapshot;
 
-    if (index < (node->context.logEntries.size()-1)) {
-        //$ TODO: look into sending more than one entry at a time
-        append.entries.push_back(node->context.logEntries[index+1]);
+    if (snapshot && index < snapshot->prevIndex) {
+        this->snapshot = snapshot;
+
+        // We have a snapshot available
+        InstallSnapshotMessage  install;
+        install.transId = this->transId;
+        install.term = node->context.currentTerm;
+        install.leaderAddress = handler->address();
+        install.lastIndex = snapshot->prevIndex;
+        install.lastTerm = snapshot->prevTerm;
+
+        std::copy_n(std::next(snapshot->prevMembers.begin(), this->offset),
+                    par->maxSnapshotSize,
+                    install.addresses.begin());
+
+        install.offset = this->offset + install.addresses.size();
+        install.done = (this->offset == snapshot->prevMembers.size());
+
+        this->offset = install.offset;
+        this->lastSentLogIndex = snapshot->prevIndex;
+        this->lastSentLogTerm = snapshot->prevTerm;
+
+        auto raw = install.toRawMessage(handler->address(), recipient);
+        handler->connection()->send(raw.get());
     }
+    else {
+        AppendEntriesMessage append;
+        append.transId = this->transId;
+        append.term = node->context.currentTerm;
+        append.leaderAddress = handler->address();
+        append.prevLogIndex = index;
+        append.prevLogTerm = node->context.logEntries[index].termReceived;
+        append.leaderCommit = node->context.commitIndex;
 
-    this->lastSentLogTerm = append.prevLogTerm;
-    this->lastSentLogIndex = append.prevLogIndex;
+        if (index < (node->context.logEntries.size()-1)) {
+            //$ TODO: look into sending more than one entry at a time
+            append.entries.push_back(node->context.logEntries[index+1]);
+        }
 
-    auto raw = append.toRawMessage(handler->address(), recipient);
-    handler->connection()->send(raw.get());    
+        this->lastSentLogTerm = append.prevLogTerm;
+        this->lastSentLogIndex = append.prevLogIndex;
+
+        auto raw = append.toRawMessage(handler->address(), recipient);
+        handler->connection()->send(raw.get());
+    }
 }
 
 void GroupUpdateTransaction::init(const MemberInfo& member, INDEX lastIndex, TERM lastTerm)
@@ -771,8 +856,12 @@ void RaftHandler::onMessageReceived(const RawMessage *raw)
         case MessageType::REQUEST_VOTE:
             onRequestVote(raw->fromAddress, raw);
             break;
+        case MessageType::INSTALL_SNAPSHOT:
+            onInstallSnapshot(raw->fromAddress, raw);
+            break;
         case MessageType::APPEND_ENTRIES_REPLY:
         case MessageType::REQUEST_VOTE_REPLY:
+        case MessageType::INSTALL_SNAPSHOT_REPLY:
             onReply(raw->fromAddress, header, raw);
             break;
         default:
@@ -858,9 +947,15 @@ void RaftHandler::onRequestVote(const Address& from, const RawMessage *raw)
     election->resetTimeout(par->getCurrtime());
 }
 
+void RaftHandler::onInstallSnapshot(const Address& from,
+                                    const RawMessage *raw)
+{
+    throw NYIException("onInstallSnapshot", __FILE__, __LINE__);
+}
+
 void RaftHandler::onReply(const Address&from,
-                                 const HeaderOnlyMessage& header,
-                                 const RawMessage *raw)
+                          const HeaderOnlyMessage& header,
+                          const RawMessage *raw)
 {
     auto trans = findTransaction(header.transId);
     if (!trans)
