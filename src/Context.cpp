@@ -152,7 +152,7 @@ void Context::loadFromStore()
     this->logEntries.clear();   // reset the log
 
     Json::Value log = root["log"];
-    for (int i=0; i<log.size(); i++) {
+    for (unsigned int i=0; i<log.size(); i++) {
         RaftLogEntry    entry;
         entry.termReceived = log[i].get("term", 0).asInt();
         entry.command = static_cast<Command>(log[i].get("command", 0).asInt());
@@ -256,7 +256,7 @@ void Context::addEntries(INDEX startIndex, vector<RaftLogEntry> & entries)
     this->setLogChanged(true);
 
     bool    rebuild = false;
-    int     index = 0;
+    INDEX   index = 0;
 
     if (startIndex < this->logEntries.size()) {
         // If are possibly removing entries, need to rebuild
@@ -352,7 +352,7 @@ void Context::checkCommitIndex(INDEX sentLogIndex)
         return;
 
     // Check to see if we have a possible new commit index
-    int total = 0;
+    unsigned int total = 0;
     for (const auto & elem : this->followers) { 
         if (elem.second.matchIndex >= sentLogIndex)
             total++;
@@ -365,7 +365,7 @@ void Context::checkCommitIndex(INDEX sentLogIndex)
 void SanityTestLog::validateLogEntries(const vector<RaftLogEntry>& entries,
                                        INDEX start, INDEX count)
 {
-    for (int i=0; i<count; i++) {
+    for (INDEX i=0; i<count; i++) {
         auto & entry = entries[start+i];
 
         // terms are non-decreasing
