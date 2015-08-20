@@ -37,9 +37,7 @@ void NetworkNode::registerHandler(ConnectType conntype,
 
 void NetworkNode::unregisterHandler(const Address &address)
 {
-    auto it = handlers.find(address);
-    if (it != handlers.end())
-        handlers.erase(it);
+    handlers.erase(address);
 }
 
 vector<Address> NetworkNode::getAddresses()

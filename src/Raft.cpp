@@ -1090,9 +1090,7 @@ void RaftHandler::addTransaction(shared_ptr<Transaction> trans)
 
 void RaftHandler::removeTransaction(int transid)
 {
-    auto it = transactions.find(transid);
-    if (it != transactions.end())
-        transactions.erase(it);
+    transactions.erase(transid);
 }
 
 void RaftHandler::initTimeoutTransactions()
