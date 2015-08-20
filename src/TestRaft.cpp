@@ -1472,4 +1472,184 @@ TEST_CASE("Raft failover", "[raft][failover]") {
 }
 
 // Test cases for log compaction
+TEST_CASE("AddServer mem test cases", "[0]") {
+    Params      params;
+    Address     myAddr(0x64656667, 8080); // 100.101.102.103:8080
+    Address     leaderAddr(0x64656667, 9000); // 100.101.102.103:9000
+
+    // Setup the timeouts
+    params.electionTimeout = 10;
+    params.idleTimeout = 5;   // not used by the mock network
+    params.rpcTimeout = 5;
+
+    // AddServer test - leader functionality
+    // Main node: 9000
+    // Nodes: 9000 (leader), 8080
+    // Action: Adding 8080 to the cluster
+    SECTION("Basic AddServer functionality - leader") {
+        // Startup a leader
+        auto network = MockNetwork::createNetwork(&params);
+        Raft::MemoryBasedContextStore store(&params);
+
+        auto nettuple = createNode(network,
+                                   &params,
+                                   &store,
+                                   leaderAddr,
+                                   leaderAddr);
+        auto netnode = std::get<0>(nettuple);
+        auto rafthandler = std::get<1>(nettuple);
+        auto conn = network->create(myAddr);
+        auto mockconn = network->findMockConnection(myAddr);
+
+        params.resetCurrtime();
+        network->reset();
+
+        // Run through the election timeout
+        runMessageLoop(netnode, &params, params.electionTimeout);
+        REQUIRE(netnode->context.currentState == Raft::State::LEADER);
+
+        // Call through the onAddServerCommand()
+        auto command = make_shared<CommandMessage>();
+        command->type = CommandType::CRAFT_ADDSERVER;
+        command->transId = 1;
+        command->address = myAddr;
+        command->to = leaderAddr;
+        command->from = myAddr;
+
+        rafthandler->onChangeServerCommand(command,
+                                           Command::CMD_ADD_SERVER,
+                                           myAddr);
+
+        // Should update the new server to current config
+        // There should be a message to the new server
+
+        // Should attempt to update to previous config
+        // Start with an appendEntries
+        // Receive empty appendEntries on mockconn
+        auto raw = mockconn->recv(0);
+        REQUIRE(raw != nullptr);
+        HeaderOnlyMessage       header;
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
+
+        AppendEntriesMessage    append;
+        append.load(raw.get());
+        REQUIRE(append.term == 2    );
+        REQUIRE(append.prevLogTerm == 0);
+        REQUIRE(append.prevLogIndex == 0);
+        REQUIRE(append.entries.size() == 1);
+        REQUIRE(append.entries[0].termReceived == 0);
+        REQUIRE(append.entries[0].command == Command::CMD_ADD_SERVER);
+        REQUIRE(append.entries[0].address == leaderAddr);
+        REQUIRE(append.leaderCommit == 1);
+
+        // Send a reply
+        AppendEntriesReply reply;
+        reply.transId = append.transId;
+        reply.term = append.term;
+        reply.success = true;
+        raw = reply.toRawMessage(myAddr, leaderAddr);
+        mockconn->send(raw.get());
+        runMessageLoop(netnode, &params, 0);
+
+        // Should get another AppendEntries
+        raw = mockconn->recv(0);
+        REQUIRE(raw != nullptr);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
+        append.load(raw.get());
+        REQUIRE(append.term == 2);
+        REQUIRE(append.prevLogTerm == 0);
+        REQUIRE(append.prevLogIndex == 1);
+        REQUIRE(append.entries.size() == 0);
+        REQUIRE(append.leaderCommit == 1);
+
+        // Send a reply
+        reply.transId = append.transId;
+        reply.term = append.term;
+        reply.success = true;
+        raw = reply.toRawMessage(myAddr, leaderAddr);
+        mockconn->send(raw.get());
+        runMessageLoop(netnode, &params, 0);
+
+        // Ok, the new server is caught up to the leader
+        // Now it should try to have all servers commit
+        // this config (although there is only the new follower.
+        // so nothing will be sent).
+
+        // Ok, now the new server should be added to the config
+        // This will send an update to the new server
+
+        // Should add the new server to config
+        // We have only been sent the log[1]
+        raw = mockconn->recv(0);
+        REQUIRE(raw != nullptr);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
+        append.load(raw.get());
+        REQUIRE(append.term == 2);
+        REQUIRE(append.prevLogTerm == 2);
+        REQUIRE(append.prevLogIndex == 2);
+        REQUIRE(append.entries.size() == 0);
+        REQUIRE(append.leaderCommit == 1);
+
+        // Send a failure reply (we are not fully up-to-date)
+        reply.transId = append.transId;
+        reply.term = append.term;
+        reply.success = false;
+        raw = reply.toRawMessage(myAddr, leaderAddr);
+        mockconn->send(raw.get());
+        runMessageLoop(netnode, &params, 0);
+
+        // Receive the next entry
+        raw = mockconn->recv(0);
+        REQUIRE(raw != nullptr);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
+        append.load(raw.get());
+        REQUIRE(append.term == 2);
+        REQUIRE(append.prevLogTerm == 0);
+        REQUIRE(append.prevLogIndex == 1);
+        REQUIRE(append.entries.size() == 1);
+        REQUIRE(append.entries[0].termReceived == 2);
+        REQUIRE(append.entries[0].command == Command::CMD_ADD_SERVER);
+        REQUIRE(append.entries[0].address == myAddr);
+        REQUIRE(append.leaderCommit == 1);
+
+        // Send a success
+        reply.transId = append.transId;
+        reply.term = append.term;
+        reply.success = true;
+        raw = reply.toRawMessage(myAddr, leaderAddr);
+        mockconn->send(raw.get());
+        runMessageLoop(netnode, &params, 0);
+
+        // Should expect one more AppendEntries
+        raw = mockconn->recv(0);
+        REQUIRE(raw != nullptr);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
+        append.load(raw.get());
+        REQUIRE(append.term == 2);
+        REQUIRE(append.prevLogTerm == 2);
+        REQUIRE(append.prevLogIndex == 2);
+        REQUIRE(append.entries.size() == 0);
+        REQUIRE(append.leaderCommit == 1);
+
+        // Send a success
+        reply.transId = append.transId;
+        reply.term = append.term;
+        reply.success = true;
+        raw = reply.toRawMessage(myAddr, leaderAddr);
+        mockconn->send(raw.get());
+        runMessageLoop(netnode, &params, 0);
+
+        // Should receive a command reply
+        raw = mockconn->recv(0);
+        REQUIRE(raw != nullptr);
+        CommandMessage  cmdreply;
+        cmdreply.load(raw.get());
+        REQUIRE(cmdreply.success == true);
+    }
+}
 

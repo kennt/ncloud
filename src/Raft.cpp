@@ -420,11 +420,6 @@ void GroupUpdateTransaction::init(const vector<Address>& members, INDEX lastInde
     this->lastLogTerm = lastTerm;
 }
 
-void GroupUpdateTransaction::close()
-{
-    Transaction::close();
-}
-
 void GroupUpdateTransaction::start()
 {
     auto node = getNetworkNode();
@@ -491,13 +486,12 @@ void GroupUpdateTransaction::onChildCompleted(Transaction *trans, bool success)
     successVotes += (success ? 1 : 0);
     failureVotes += (success ? 0 : 1);
 
-    trans->close();
-    this->handler->removeTransaction(trans->transId);
-
     if (isMajority() && this->onCompleted) {
         // Notify of success!
         completed(successVotes > failureVotes);
     }
+
+    this->handler->removeTransaction(trans->transId);
 }
 
 void MemberChangeTransaction::init(const MemberInfo& member)
@@ -571,8 +565,10 @@ void MemberChangeTransaction::onServerUpdateCompleted(Transaction *trans,
                                                       bool success)
 {
     auto current = this->currentTrans.lock();
-    if (current)
+    if (current) {
+        current->close();
         this->handler->removeTransaction(current->transId);
+    }
     this->currentTrans.reset();
 
     auto node = getNetworkNode();
@@ -619,8 +615,10 @@ void MemberChangeTransaction::onPrevConfigCompleted(Transaction *trans,
                                                     bool success)
 {
     auto current = this->currentTrans.lock();
-    if (current)
+    if (current) {
+        current->close();
         this->handler->removeTransaction(current->transId);
+    }
     this->currentTrans.reset();
 
     auto node = getNetworkNode();
@@ -671,8 +669,9 @@ void MemberChangeTransaction::onCommandUpdateCompleted(Transaction *trans,
                                                        bool success)
 {
     auto current = this->currentTrans.lock();
-    if (current)
+    if (current) {
         this->handler->removeTransaction(current->transId);
+    }
     this->currentTrans.reset();
 
     auto node = getNetworkNode();

@@ -288,7 +288,7 @@ protected:
     // come to a decision point (not necessarily fully completed).
     Transaction::RESULT completed(bool success)
     {
-        if (this->onCompleted)
+        if (this->onCompleted != nullptr)
             this->onCompleted(this, success);
         close();
         return Transaction::RESULT::DELETE;
@@ -425,7 +425,6 @@ public:
     void init(const vector<Address> &members, INDEX lastIndex, TERM lastTerm);
 
     virtual void start() override;
-    virtual void close() override;
     virtual Transaction::RESULT onReply(const RawMessage *raw) override;
     virtual Transaction::RESULT onTimeout() override;
 
