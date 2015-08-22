@@ -283,7 +283,7 @@ void Context::addEntries(INDEX startIndex, vector<RaftLogEntry> & entries)
                 if (DEBUG_) {
                     SanityTestLog     test;
                     test.validateLogEntries(this->logEntries, 0, startIndex+index);
-                    test.validateLogEntries(entries, index, static_cast<int>(entries.size()-index));
+                    test.validateLogEntries(entries, index, entries.size()-index);
                 }
                 this->logEntries.resize(startIndex+index);
 
@@ -297,7 +297,7 @@ void Context::addEntries(INDEX startIndex, vector<RaftLogEntry> & entries)
     if (rebuild) {
         this->handler->applyLogEntry(CMD_CLEAR_LIST, Address());
         this->handler->applyLogEntries(this->logEntries);
-        this->lastAppliedIndex = static_cast<int>(this->logEntries.size() - 1);
+        this->lastAppliedIndex = this->logEntries.size() - 1;
     }
 
     // Append on all other entries

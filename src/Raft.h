@@ -456,6 +456,9 @@ protected:
     shared_ptr<Snapshot> snapshot;
 
     void        sendAppendEntriesRequest(INDEX index);
+
+    Transaction::RESULT     onAppendEntriesReply(const RawMessage *raw);
+    Transaction::RESULT     onInstallSnapshotReply(const RawMessage *raw);
 };
 
 
@@ -490,9 +493,9 @@ protected:
     // (keeps track of nodes that have replied)
     set<Address> replied;
 
-    int     totalVotes;
-    int     successVotes;
-    int     failureVotes;
+    unsigned int totalVotes;
+    unsigned int successVotes;
+    unsigned int failureVotes;
 
     // Full set of recipients
     vector<Address> recipients;

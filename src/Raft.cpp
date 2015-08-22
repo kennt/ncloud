@@ -303,7 +303,7 @@ void ElectionTransaction::init(const MemberInfo& member)
 
     yesVotes = 1;   // vote for ourself
     noVotes = 0;
-    totalVotes = static_cast<int>(member.memberList.size());
+    totalVotes = member.memberList.size();
     voted.insert(handler->address());
     for (auto & elem: member.memberList) {
         recipients.push_back(elem.address);
@@ -378,6 +378,30 @@ Transaction::RESULT UpdateTransaction::onReply(const RawMessage *raw)
     if (node->context.currentState != State::LEADER)
         return completed(false);
 
+    HeaderOnlyMessage header;
+    header.load(raw);
+
+    Transaction::RESULT result;
+
+    switch(header.msgtype) {
+        case APPEND_ENTRIES_REPLY:
+            result = onAppendEntriesReply(raw);
+            break;
+        case INSTALL_SNAPSHOT_REPLY:
+            result = onInstallSnapshotReply(raw);
+            break;
+        default:
+            throw AppException("unexpected message type in onReply");
+            break;
+    }
+
+    return result;
+}
+
+Transaction::RESULT UpdateTransaction::onAppendEntriesReply(const RawMessage *raw)
+{
+    auto node = getNetworkNode();
+
     AppendEntriesReply reply;
     reply.load(raw);
 
@@ -399,6 +423,18 @@ Transaction::RESULT UpdateTransaction::onReply(const RawMessage *raw)
         node->context.followers[raw->fromAddress].nextIndex -= 1;
         sendAppendEntriesRequest(this->lastSentLogIndex-1);
     }
+
+    return Transaction::RESULT::KEEP;
+}
+
+Transaction::RESULT UpdateTransaction::onInstallSnapshotReply(const RawMessage *raw)
+{
+    auto node = getNetworkNode();
+
+    InstallSnapshotReply reply;
+    reply.load(raw);
+
+    throw NYIException("UpdateTransaction::onInstallSnapshotReply", __FILE__, __LINE__);
     return Transaction::RESULT::KEEP;
 }
 
@@ -427,7 +463,8 @@ void UpdateTransaction::sendAppendEntriesRequest(INDEX index)
         index = node->context.followers[recipient].nextIndex;
 
     shared_ptr<Snapshot> snapshot;
-    // If we are using a snapshot, use that, else use current context
+    // If we are using a snapshot, use that, else use the snapshot
+    // in the current context
     if (this->snapshot)
         snapshot = this->snapshot;
     else
@@ -436,7 +473,6 @@ void UpdateTransaction::sendAppendEntriesRequest(INDEX index)
     if (snapshot && index < snapshot->prevIndex) {
         this->snapshot = snapshot;
 
-        // We have a snapshot available
         InstallSnapshotMessage  install;
         install.transId = this->transId;
         install.term = node->context.currentTerm;
@@ -444,12 +480,17 @@ void UpdateTransaction::sendAppendEntriesRequest(INDEX index)
         install.lastIndex = snapshot->prevIndex;
         install.lastTerm = snapshot->prevTerm;
 
-        std::copy_n(std::next(snapshot->prevMembers.begin(), this->offset),
-                    par->maxSnapshotSize,
-                    install.addresses.begin());
+        size_t count = min(static_cast<size_t>(par->maxSnapshotSize),
+                           snapshot->prevMembers.size() - this->offset);
+
+        //std::copy_n(snapshot->prevMembers.begin() + this->offset,
+        //            count,
+        //            std::back_inserter(install.addresses));
+        for (int i=0; i<count; i++)
+            install.addresses.push_back(snapshot->prevMembers[this->offset+i]);
 
         install.offset = this->offset + install.addresses.size();
-        install.done = (this->offset == snapshot->prevMembers.size());
+        install.done = (install.offset == snapshot->prevMembers.size());
 
         this->offset = install.offset;
         this->lastSentLogIndex = snapshot->prevIndex;
@@ -509,7 +550,7 @@ void GroupUpdateTransaction::start()
 {
     auto node = getNetworkNode();
     
-    totalVotes = static_cast<int>(recipients.size());
+    totalVotes = recipients.size();
     successVotes = 1;       // for ourselves
     failureVotes = 0;
 
