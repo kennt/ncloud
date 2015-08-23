@@ -201,6 +201,11 @@ struct Snapshot
 
     Snapshot() : prevIndex(0), prevTerm(0)
     {}
+    Snapshot(INDEX index, TERM term, const vector<Address>& addresses)
+        : prevIndex(index), prevTerm(term)
+    {
+        this->prevMembers = addresses;
+    }
 };
 
 
@@ -216,7 +221,7 @@ struct Context
         handler(nullptr), store(nullptr), 
         currentState(State::NONE),
         commitIndex(0), lastAppliedIndex(0), currentTerm(0),
-        logChanged_(false)
+        logChanged_(false), prevIndex(0), prevTerm(0)
     {}
 
     void init(RaftHandler *handler,
@@ -279,7 +284,44 @@ struct Context
     bool                    logChanged_;
 
     // Snapshot information
+    // This contains information about the current snapshot
+    // if one has been taken (leader) or has been applied (follower).
     shared_ptr<Snapshot>    currentSnapshot;
+
+    // This is kept by the follower to accumulate the state
+    // information. Thus the information here may not be up-to-date.
+    shared_ptr<Snapshot>    workingSnapshot;
+
+    // If the current setup has been snapshotted, this is the
+    // location/term of the last entry that has been applied
+    // to the snapshot. In other words, we do not have logEntries
+    // for anything <= prevIndex;
+    //$ TODO: redundant, this information is in currentSnapshot
+    INDEX                   prevIndex;
+    TERM                    prevTerm;
+
+    // Some APIs to help index calculations (to account for the snapshot)
+    // Returns the term at the given index (offset by the snapshot)
+    TERM    termAt(INDEX index)
+    { 
+        return entryAt(index).termReceived;
+    }
+    // Returns the entry at the given index (offset by the snapshot)
+    RaftLogEntry entryAt(INDEX index)
+    {
+        // The calculations get weird because of the behavior when prevIndex = 0.
+        // A prevIndex > 0 indicates a snapshot including prevIndex
+        // however prevIndex == 0, indicates no snapshot
+        if (index > getLastLogIndex())
+            throw AppException("index above bounds");
+
+        if (prevIndex == 0)
+            return logEntries[index];
+
+        if (index <= prevIndex)
+            throw AppException("index below bounds");
+        return logEntries[index - prevIndex - 1];
+    }
 
     // Serialization APIs
     void saveToStore();
@@ -331,7 +373,7 @@ struct Context
     void switchToCandidate();
     void switchToFollower();
 
-    INDEX getLastLogIndex()   { return static_cast<int>(this->logEntries.size() - 1); }
+    INDEX getLastLogIndex()   { return this->prevIndex + this->logEntries.size() - 1; }
     TERM getLastLogTerm()    { return this->logEntries.back().termReceived; }
 
     // Use this to trigger sending of log updates
@@ -357,6 +399,10 @@ public:
     TERM            lastTermSeen;
 
     SanityTestLog() : lastTermSeen(0) {}
+
+    // Initializes the state from the snapshot
+    // nullptr may be passed in to initialize to an empty state.
+    void init(Snapshot *snapshot);
 
     // Performs basically the following:
     // for (int i=0; i<count; i++)

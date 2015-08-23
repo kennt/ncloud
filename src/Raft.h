@@ -194,7 +194,6 @@ public:
     TERM        lastTerm;
 
     // For us, the config is the same as the snapshot
-    // This may be a subset of addresses
     // Starting position for the address vector (since we may be
     // sending a subset of addresses at a time).
     unsigned int offset;
@@ -403,9 +402,9 @@ public:
     virtual Transaction::RESULT onTimeout() override;
 
 protected:
-    int         yesVotes;
-    int         noVotes;
-    int         totalVotes;
+    unsigned int    yesVotes;
+    unsigned int    noVotes;
+    unsigned int    totalVotes;
     set<Address> voted;
 
     vector<Address> recipients;

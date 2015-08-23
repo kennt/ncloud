@@ -663,7 +663,7 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
 
         AppendEntriesMessage    append;
         append.load(raw.get());
-        REQUIRE(append.term == 2    );
+        REQUIRE(append.term == 2);
         REQUIRE(append.prevLogTerm == 0);
         REQUIRE(append.prevLogIndex == 0);
         REQUIRE(append.entries.size() == 1);
@@ -1463,6 +1463,11 @@ TEST_CASE("Raft elections", "[raft][election][system]")
     }
 }
 
+// Test cases for log compaction
+TEST_CASE("Raft log compaction", "[raft][snapshot]") {
+
+}
+
 // Test cases for log operations
 // Test cases for failover scenarios
 TEST_CASE("Raft failover", "[raft][failover]") {
@@ -1471,5 +1476,4 @@ TEST_CASE("Raft failover", "[raft][failover]") {
     // timeout and then try again
 }
 
-// Test cases for log compaction
 

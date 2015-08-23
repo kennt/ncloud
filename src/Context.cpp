@@ -122,6 +122,11 @@ void Context::init(RaftHandler *handler,
     this->logEntries.clear();
     this->logEntries.emplace_back(); // add dummy first entry
 
+    this->currentSnapshot = nullptr;
+    this->workingSnapshot = nullptr;
+    this->prevIndex = 0;
+    this->prevTerm = 0;
+
     // Reload the persisted state
     this->loadFromStore();
 }
@@ -198,7 +203,7 @@ void Context::saveToStore()
 
 void Context::changeMembership(Command cmd, const Address& address)
 {
-    assert(this->lastAppliedIndex == (this->logEntries.size()-1));
+    assert(this->lastAppliedIndex == this->getLastLogIndex());
 
     auto node = this->handler->node();
 
@@ -212,7 +217,7 @@ void Context::changeMembership(Command cmd, const Address& address)
     this->logEntries.push_back(entry);
     this->handler->applyLogEntry(entry);
     this->lastAppliedIndex++;
-    assert(this->lastAppliedIndex == (this->logEntries.size() - 1));
+    assert(this->lastAppliedIndex == this->getLastLogIndex());
 
     setLogChanged(true);
 }
@@ -249,7 +254,7 @@ void Context::startElection(const MemberInfo& member)
 void Context::addEntries(INDEX startIndex, vector<RaftLogEntry> & entries)
 {
     // At most we are appending all new entries
-    if (startIndex > this->logEntries.size()) {
+    if (startIndex > (this->getLastLogIndex() + 1)) {
         throw AppException("Context log index out-of-range");
     }
 
@@ -258,7 +263,8 @@ void Context::addEntries(INDEX startIndex, vector<RaftLogEntry> & entries)
     bool    rebuild = false;
     INDEX   index = 0;
 
-    if (startIndex < this->logEntries.size()) {
+    // Is there an overlap?
+    if (startIndex <= this->getLastLogIndex()) {
         // If are possibly removing entries, need to rebuild
         // the state machine from scratch (or we could reverse
         // the entries but need to check that we don't delete
@@ -270,10 +276,10 @@ void Context::addEntries(INDEX startIndex, vector<RaftLogEntry> & entries)
         // Look for entries that are in conflict
         for (index=0; index<entries.size(); index++) {
             // Stop if we go past the log size
-            if (startIndex+index > this->logEntries.size()-1)
+            if (startIndex+index > this->getLastLogIndex())
                 break;
 
-            if (entries[index].termReceived != this->logEntries[startIndex+index].termReceived) {
+            if (entries[index].termReceived != termAt(startIndex+index)) {
                 // This location is different!
                 // Delete this and all succeeding entries from the log
 
@@ -282,12 +288,13 @@ void Context::addEntries(INDEX startIndex, vector<RaftLogEntry> & entries)
                 // added or adding servers twice).
                 if (DEBUG_) {
                     SanityTestLog     test;
-                    test.validateLogEntries(this->logEntries, 0, startIndex+index);
+                    test.init(this->currentSnapshot.get());
+                    test.validateLogEntries(this->logEntries, 0, startIndex-prevIndex+index);
                     test.validateLogEntries(entries, index, entries.size()-index);
                 }
-                this->logEntries.resize(startIndex+index);
+                this->logEntries.resize(startIndex-prevIndex+index);
 
-                // force rebuilding of the memberlist
+                // force rebuilding of the memberlist`
                 rebuild = true;
                 break;
             }
@@ -296,8 +303,14 @@ void Context::addEntries(INDEX startIndex, vector<RaftLogEntry> & entries)
 
     if (rebuild) {
         this->handler->applyLogEntry(CMD_CLEAR_LIST, Address());
+        // Reapply the snapshot
+        if (this->currentSnapshot) {
+            for (auto & addr : this->currentSnapshot->prevMembers) {
+                this->handler->applyLogEntry(CMD_ADD_SERVER, addr);
+            }
+        }
         this->handler->applyLogEntries(this->logEntries);
-        this->lastAppliedIndex = this->logEntries.size() - 1;
+        this->lastAppliedIndex = this->getLastLogIndex();
     }
 
     // Append on all other entries
@@ -313,7 +326,8 @@ void Context::addEntries(INDEX startIndex, vector<RaftLogEntry> & entries)
 
     if (DEBUG_) {
         SanityTestLog test;
-        test.validateLogEntries(this->logEntries, 0, this->lastAppliedIndex+1);
+        test.init(this->currentSnapshot.get());
+        test.validateLogEntries(this->logEntries, 0, this->logEntries.size());
     }
 
 }
@@ -323,7 +337,7 @@ void Context::applyCommittedEntries()
     if (this->commitIndex > this->lastAppliedIndex) {
         for (INDEX i=this->lastAppliedIndex; i<=this->commitIndex; i++) {
             // Apply log entries to match
-            this->handler->applyLogEntry(this->logEntries[i]);
+            this->handler->applyLogEntry(this->entryAt(i));
         }
         this->lastAppliedIndex = this->commitIndex;
         this->setLogChanged(true);
@@ -359,6 +373,18 @@ void Context::checkCommitIndex(INDEX sentLogIndex)
     }
     if (2*total > this->followers.size()) {
         this->commitIndex = sentLogIndex;
+    }
+}
+
+void SanityTestLog::init(Snapshot *snapshot)
+{
+    entries.clear();
+    servers.clear();
+    lastTermSeen = 0;
+
+    if (snapshot) {
+        for (auto & addr : snapshot->prevMembers)
+            this->servers.insert(addr);
     }
 }
 

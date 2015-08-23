@@ -39,9 +39,6 @@ TEST_CASE("Context", "[context]")
     Address     myAddr(0x64656667, 8000); // 100.101.102.103:8000
     auto network = MockNetwork::createNetwork(par);
     auto conn = network->create(myAddr);
-    auto mockconn = network->findMockConnection(myAddr);
-
-    NetworkNode node(name, nullptr, par, network);
     auto netnode = make_shared<NetworkNode>(name, nullptr, par, network);
 
     // Setup the timeouts

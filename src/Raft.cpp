@@ -62,7 +62,7 @@ unique_ptr<RawMessage> AppendEntriesMessage::toRawMessage(const Address &from,
     write_raw<INDEX>(ss, this->prevLogIndex);
     write_raw<TERM>(ss, this->prevLogTerm);
     write_raw<INDEX>(ss, this->leaderCommit);
-    write_raw<unsigned int>(ss, this->entries.size());
+    write_raw<unsigned int>(ss, static_cast<unsigned int>(this->entries.size()));
     for (auto & logEntry : entries) {
         logEntry.write(ss);
     }
@@ -167,7 +167,7 @@ unique_ptr<RawMessage> InstallSnapshotMessage::toRawMessage(const Address& from,
     write_raw<Address>(ss, this->leaderAddress);
     write_raw<INDEX>(ss, this->lastIndex);
     write_raw<TERM>(ss, this->lastTerm);
-    write_raw<unsigned int>(ss, this->addresses.size());
+    write_raw<unsigned int>(ss, static_cast<unsigned int>(this->addresses.size()));
     for (auto & addr : this->addresses) {
         write_raw<Address>(ss, addr);
     }
@@ -303,7 +303,7 @@ void ElectionTransaction::init(const MemberInfo& member)
 
     yesVotes = 1;   // vote for ourself
     noVotes = 0;
-    totalVotes = member.memberList.size();
+    totalVotes = static_cast<unsigned int>(member.memberList.size());
     voted.insert(handler->address());
     for (auto & elem: member.memberList) {
         recipients.push_back(elem.address);
@@ -480,16 +480,12 @@ void UpdateTransaction::sendAppendEntriesRequest(INDEX index)
         install.lastIndex = snapshot->prevIndex;
         install.lastTerm = snapshot->prevTerm;
 
-        size_t count = min(static_cast<size_t>(par->maxSnapshotSize),
-                           snapshot->prevMembers.size() - this->offset);
+        // install.addresses.append(snapShot->prevMembers);
+        install.addresses.insert(install.addresses.end(),
+                                 snapshot->prevMembers.begin(),
+                                 snapshot->prevMembers.end());
 
-        //std::copy_n(snapshot->prevMembers.begin() + this->offset,
-        //            count,
-        //            std::back_inserter(install.addresses));
-        for (int i=0; i<count; i++)
-            install.addresses.push_back(snapshot->prevMembers[this->offset+i]);
-
-        install.offset = this->offset + install.addresses.size();
+        install.offset = this->offset + static_cast<unsigned int>(install.addresses.size());
         install.done = (install.offset == snapshot->prevMembers.size());
 
         this->offset = install.offset;
@@ -505,12 +501,12 @@ void UpdateTransaction::sendAppendEntriesRequest(INDEX index)
         append.term = node->context.currentTerm;
         append.leaderAddress = handler->address();
         append.prevLogIndex = index;
-        append.prevLogTerm = node->context.logEntries[index].termReceived;
+        append.prevLogTerm = node->context.termAt(index);
         append.leaderCommit = node->context.commitIndex;
 
-        if (index < (node->context.logEntries.size()-1)) {
+        if (index < node->context.getLastLogIndex()) {
             //$ TODO: look into sending more than one entry at a time
-            append.entries.push_back(node->context.logEntries[index+1]);
+            append.entries.push_back(node->context.entryAt(index+1));
         }
 
         this->lastSentLogTerm = append.prevLogTerm;
@@ -550,7 +546,7 @@ void GroupUpdateTransaction::start()
 {
     auto node = getNetworkNode();
     
-    totalVotes = recipients.size();
+    totalVotes = static_cast<unsigned int>(recipients.size());
     successVotes = 1;       // for ourselves
     failureVotes = 0;
 
@@ -928,8 +924,8 @@ void RaftHandler::onAppendEntries(const Address& from, const RawMessage *raw)
     if (message->term < node->context.currentTerm) {
         reply.success = false;
     }
-    else if ((message->prevLogIndex > (node->context.logEntries.size()-1)) ||
-              message->prevLogTerm != node->context.logEntries[message->prevLogIndex].termReceived) {
+    else if (message->prevLogIndex > node->context.getLastLogIndex() ||
+             message->prevLogTerm != node->context.termAt(message->prevLogIndex)) {
         reply.success = false;
     }
     else {
@@ -952,6 +948,66 @@ void RaftHandler::onAppendEntries(const Address& from, const RawMessage *raw)
     // if from current leader, reset timeout
     if (from == node->context.currentLeader)
         election->resetTimeout(par->getCurrtime());
+    auto rawReply = reply.toRawMessage(address(), from);
+    this->connection()->send(rawReply.get());
+}
+
+void RaftHandler::onInstallSnapshot(const Address& from,
+                                    const RawMessage *raw)
+{
+    DEBUG_LOG(connection_->address(), "Install Snapshot received from %s",
+              from.toString().c_str());
+
+    auto node = getNetworkNode();
+
+    shared_ptr<InstallSnapshotMessage> message = make_shared<InstallSnapshotMessage>();
+    message->load(raw);
+
+    InstallSnapshotReply  reply;
+    reply.transId = message->transId;
+    reply.term = node->context.currentTerm;
+
+    if (message->lastIndex > node->context.prevIndex) {
+        if (!node->context.workingSnapshot)
+            node->context.workingSnapshot = make_shared<Snapshot>();
+        auto snapshot = node->context.workingSnapshot;
+
+        if (message->offset != snapshot->prevMembers.size()) {
+            // Error case! Should not get here under normal operation
+            // Assume that we have received a message twice, so ignore
+            return;
+        }
+        snapshot->prevMembers.reserve(message->offset + message->addresses.size());
+        snapshot->prevMembers.insert(snapshot->prevMembers.end(),
+                                     message->addresses.begin() + message->offset,
+                                     message->addresses.end());
+        snapshot->prevIndex = message->lastIndex;
+        snapshot->prevTerm = message->lastTerm;
+
+        if (message->done) {
+            // How many entries are we actually removing from the log?
+            size_t  ndelete = snapshot->prevIndex - node->context.prevIndex;
+
+            // Truncate the log
+            node->context.logEntries.erase(
+                node->context.logEntries.begin(),
+                node->context.logEntries.begin() + ndelete);
+            node->context.prevIndex = node->context.currentSnapshot->prevIndex;
+            node->context.prevTerm = node->context.currentSnapshot->prevTerm;
+
+            // Update the memberinfo
+            this->applyLogEntry(Command::CMD_CLEAR_LIST, Address());
+            for (auto & addr : snapshot->prevMembers) {
+                this->applyLogEntry(Command::CMD_ADD_SERVER, addr);
+            }
+            node->context.setLogChanged(true);
+            node->context.lastAppliedIndex = node->context.prevIndex;
+
+            node->context.currentSnapshot = node->context.workingSnapshot;
+            node->context.workingSnapshot = nullptr;
+        }
+    }
+
     auto rawReply = reply.toRawMessage(address(), from);
     this->connection()->send(rawReply.get());
 }
@@ -986,12 +1042,6 @@ void RaftHandler::onRequestVote(const Address& from, const RawMessage *raw)
 
     // If we have voted, reset the timeout
     election->resetTimeout(par->getCurrtime());
-}
-
-void RaftHandler::onInstallSnapshot(const Address& from,
-                                    const RawMessage *raw)
-{
-    throw NYIException("onInstallSnapshot", __FILE__, __LINE__);
 }
 
 void RaftHandler::onReply(const Address&from,
@@ -1154,6 +1204,7 @@ void RaftHandler::applyLogEntry(Command command,
             break;
         case CMD_CLEAR_LIST:
             node->member.memberList.clear();
+            node->context.followers.clear();
             break;
         default:
             throw NetworkException("Unknown log entry command!");
