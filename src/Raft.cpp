@@ -411,6 +411,9 @@ Transaction::RESULT UpdateTransaction::onAppendEntriesReply(const RawMessage *ra
 
         node->context.checkCommitIndex(lastSentLogIndex);
 
+        this->offset = 0;
+        this->snapshot = nullptr;
+
         // Are we all caught up?
         if (lastLogIndex == lastSentLogIndex)
             return completed(true);
@@ -431,10 +434,21 @@ Transaction::RESULT UpdateTransaction::onInstallSnapshotReply(const RawMessage *
 {
     auto node = getNetworkNode();
 
-    InstallSnapshotReply reply;
-    reply.load(raw);
+    // Are we done with the snapshot? If not, continue on
+    if (this->offset == snapshot->prevMembers.size()) {
+        node->context.followers[raw->fromAddress].matchIndex = lastSentLogIndex;
+        node->context.followers[raw->fromAddress].nextIndex = lastSentLogIndex+1;
 
-    throw NYIException("UpdateTransaction::onInstallSnapshotReply", __FILE__, __LINE__);
+        node->context.checkCommitIndex(lastSentLogIndex);
+
+        // Are we all caught up?
+        if (lastLogIndex == lastSentLogIndex)
+            return completed(true);
+        sendAppendEntriesRequest(this->lastSentLogIndex+1);
+    }
+    else
+        sendAppendEntriesRequest(this->lastSentLogIndex);
+
     return Transaction::RESULT::KEEP;
 }
 
@@ -480,10 +494,11 @@ void UpdateTransaction::sendAppendEntriesRequest(INDEX index)
         install.lastIndex = snapshot->prevIndex;
         install.lastTerm = snapshot->prevTerm;
 
-        // install.addresses.append(snapShot->prevMembers);
-        install.addresses.insert(install.addresses.end(),
-                                 snapshot->prevMembers.begin(),
-                                 snapshot->prevMembers.end());
+        // Append the next sent of entries
+        size_t count = std::min(static_cast<size_t>(par->maxSnapshotSize),
+                                snapshot->prevMembers.size() - this->offset);
+        for (size_t i=0; i<count; i++)
+            install.addresses.push_back(snapshot->prevMembers[i+this->offset]);
 
         install.offset = this->offset + static_cast<unsigned int>(install.addresses.size());
         install.done = (install.offset == snapshot->prevMembers.size());
@@ -823,7 +838,7 @@ void RaftHandler::start(const Address &leader)
     node->member.memberList.clear();
 
     DEBUG_LOG(connection()->address(), "starting up...");
-    node->context.init(this, store);
+    node->context.init(this, store, snapshotStore);
 
     // Setup the various timeout callbacks
     //  - electionTimeout
@@ -927,6 +942,29 @@ void RaftHandler::onAppendEntries(const Address& from, const RawMessage *raw)
     else if (message->prevLogIndex > node->context.getLastLogIndex() ||
              message->prevLogTerm != node->context.termAt(message->prevLogIndex)) {
         reply.success = false;
+    }
+    else if (node->context.prevIndex && (message->prevLogIndex <= node->context.prevIndex)) {
+        // We have a snapshot, so we will have to go all the way
+        // back for the data
+        if (message->prevLogIndex > 0)
+            reply.success = false;
+        else {
+            // We are at the beginning
+            reply.success = true;
+
+            // Reset the context
+            node->context.currentSnapshot = nullptr;
+            node->context.prevIndex = 0;
+            node->context.prevTerm = 0;
+
+            this->applyLogEntry(CMD_CLEAR_LIST, Address());
+            node->context.logEntries.clear();
+            node->context.logEntries.emplace_back();
+            node->context.addEntries(0, message->entries);
+
+            node->context.commitIndex = 0;
+            node->context.lastAppliedIndex = 0;
+        }
     }
     else {
         // Add the new entries to the log
@@ -1171,6 +1209,12 @@ void RaftHandler::onTimeout()
             lastUpdate = par->getCurrtime();
         }
     }
+
+    // Has the number of entries grown too large?
+    if ((par->logCompactionThreshold > 0) &&
+        (node->context.logEntries.size() >= par->logCompactionThreshold)) {
+        this->takeSnapshot();
+    }
 }
 
 // The actual Raft state machine (for our application) is
@@ -1323,4 +1367,22 @@ void RaftHandler::onCompletedMemberChange(Transaction *trans, bool success)
         this->removeTransaction(this->memberchange->transId);
     }
     this->memberchange = nullptr;
+}
+
+void RaftHandler::takeSnapshot()
+{
+    auto node = getNetworkNode();
+    auto snapshot = make_shared<Snapshot>();
+    snapshot->prevIndex = node->context.lastAppliedIndex;
+    snapshot->prevTerm = node->context.termAt(snapshot->prevIndex);
+
+    for (auto & mem : node->member.memberList)
+        snapshot->prevMembers.push_back(mem.address);
+
+    node->context.currentSnapshot = snapshot;
+    node->context.prevIndex = snapshot->prevIndex;
+    node->context.prevTerm = snapshot->prevTerm;
+
+    // Truncate the log
+    node->context.logEntries.clear();
 }

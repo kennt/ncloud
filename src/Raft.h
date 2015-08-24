@@ -578,12 +578,13 @@ public:
     //
     RaftHandler(Log *log, 
                 Params *par,
-                ContextStoreInterface *store,
+                StorageInterface *store,
+                StorageInterface *snapshotStore,
                 shared_ptr<NetworkNode> netnode,
                 shared_ptr<IConnection> connection)
-        : log(log), par(par), store(store), netnode(netnode),
-        connection_(connection), lastUpdate(0), electionTimeoutModifier(0),
-        nextMessageId(0)
+        : log(log), par(par), store(store), snapshotStore(snapshotStore),
+        netnode(netnode), connection_(connection), lastUpdate(0),
+        electionTimeoutModifier(0), nextMessageId(0)
     {
     };
 
@@ -673,10 +674,14 @@ public:
     void setElectionTimeoutModifier(int tm)
         { this->electionTimeoutModifier = tm; }
 
+    // Creates a snapshot of the current config and saves it
+    void takeSnapshot();
+
 protected:
     Log *                   log;
     Params *                par;
-    ContextStoreInterface * store;
+    StorageInterface *      store;
+    StorageInterface *      snapshotStore;
     weak_ptr<NetworkNode>   netnode;
     shared_ptr<IConnection> connection_;
     int                     lastUpdate;

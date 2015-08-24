@@ -30,7 +30,7 @@ void RaftLogEntry::read(istringstream& is)
     this->address = read_raw<Address>(is);
 }
 
-FileBasedContextStore::FileBasedContextStore(const char *filename)
+FileBasedStorage::FileBasedStorage(const char *filename)
     : filename(filename)
 {
     fs.open(filename, std::fstream::in |
@@ -38,13 +38,13 @@ FileBasedContextStore::FileBasedContextStore(const char *filename)
                       std::fstream::binary);
 }
 
-FileBasedContextStore::~FileBasedContextStore()
+FileBasedStorage::~FileBasedStorage()
 {
     fs.flush();
     fs.close();
 }
 
-Json::Value FileBasedContextStore::read()
+Json::Value FileBasedStorage::read()
 {
     Json::Value root;
     fs.seekg(0, fs.beg);
@@ -52,21 +52,21 @@ Json::Value FileBasedContextStore::read()
     return root;
 }
 
-void FileBasedContextStore::write(const Json::Value& value)
+void FileBasedStorage::write(const Json::Value& value)
 {
     fs.seekp(0);    // seek to the beginning
     fs << value;
     fs.flush();
 }
 
-bool FileBasedContextStore::empty()
+bool FileBasedStorage::empty()
 {
     fs.seekg(0, fs.end);
     auto length = fs.tellg();
     return length == 0;
 }
 
-void FileBasedContextStore::reset()
+void FileBasedStorage::reset()
 {
     fs.close();
     fs.open(filename, std::fstream::in |
@@ -75,16 +75,16 @@ void FileBasedContextStore::reset()
                       std::fstream::trunc);
 }
 
-MemoryBasedContextStore::MemoryBasedContextStore(Params *par)
+MemoryBasedStorage::MemoryBasedStorage(Params *par)
     : par(par)
 {}
 
-Json::Value MemoryBasedContextStore::read()
+Json::Value MemoryBasedStorage::read()
 {
     return current;
 }
 
-void MemoryBasedContextStore::write(const Json::Value& value)
+void MemoryBasedStorage::write(const Json::Value& value)
 {
     // This will do a deep-copy
     current = value;
@@ -92,22 +92,24 @@ void MemoryBasedContextStore::write(const Json::Value& value)
     entries.emplace_back(par->getCurrtime(), time(NULL));
 }
 
-bool MemoryBasedContextStore::empty()
+bool MemoryBasedStorage::empty()
 {
     return !current;
 }
 
-void MemoryBasedContextStore::reset()
+void MemoryBasedStorage::reset()
 {
     entries.clear();
     current.clear();
 }
 
 void Context::init(RaftHandler *handler,
-                   ContextStoreInterface *store)
+                   StorageInterface *store,
+                   StorageInterface *snapshotStore)
 {
     this->handler = handler;
     this->store = store;
+    this->snapshotStore = snapshotStore;
 
     // Start up as a follower node
     this->currentState = State::FOLLOWER;
@@ -131,7 +133,7 @@ void Context::init(RaftHandler *handler,
     this->loadFromStore();
 }
 
-// Loads the context from the ContextStore, then
+// Loads the context from the Storage, then
 // updates the context variables as needed.
 void Context::loadFromStore()
 {
@@ -154,16 +156,18 @@ void Context::loadFromStore()
     this->votedFor.parse(
         root.get("votedFor", "0.0.0.0").asString().c_str(), port);
 
+    this->loadSnapshotFromStore();
+
     this->logEntries.clear();   // reset the log
 
     Json::Value log = root["log"];
     for (unsigned int i=0; i<log.size(); i++) {
         RaftLogEntry    entry;
-        entry.termReceived = log[i].get("term", 0).asInt();
-        entry.command = static_cast<Command>(log[i].get("command", 0).asInt());
+        entry.termReceived = log[i].get("t", 0).asInt();
+        entry.command = static_cast<Command>(log[i].get("c", 0).asInt());
         entry.address.parse(
-            log[i].get("address", "0.0.0.0").asString().c_str(),
-            static_cast<unsigned short>(log[i].get("port", 0).asInt()));
+            log[i].get("a", "0.0.0.0").asString().c_str(),
+            log[i].get("p", 0).asUInt());
 
         this->logEntries.push_back(entry);
     }
@@ -174,7 +178,7 @@ void Context::loadFromStore()
     this->lastAppliedIndex = static_cast<int>(this->logEntries.size() - 1);
 }
 
-// Persists the context to the ContextStore, then
+// Persists the context to the Storage, then
 // updates the context variables as needed.
 void Context::saveToStore()
 {
@@ -190,15 +194,69 @@ void Context::saveToStore()
     Json::Value log;
     for (auto & entry: this->logEntries) {
         Json::Value logEntry;
-        logEntry["term"] = static_cast<Json::UInt>(entry.termReceived);
-        logEntry["command"] = static_cast<int>(entry.command);
-        logEntry["address"] = entry.address.toAddressString();
-        logEntry["port"] = entry.address.getPort();
+        logEntry["t"] = static_cast<Json::UInt>(entry.termReceived);
+        logEntry["c"] = static_cast<int>(entry.command);
+        logEntry["a"] = entry.address.toAddressString();
+        logEntry["p"] = entry.address.getPort();
         log.append(logEntry);
     }
     root["log"] = log;
 
     store->write(root);
+    this->saveSnapshotToStore();
+}
+
+void Context::saveSnapshotToStore()
+{
+    if (!this->snapshotStore)
+        return;
+
+    snapshotStore->reset();
+
+    if (!this->currentSnapshot)
+        return;
+
+    Json::Value snapshotRoot;
+
+    snapshotRoot["index"] = static_cast<Json::UInt>(this->currentSnapshot->prevIndex);
+    snapshotRoot["term"] = static_cast<Json::UInt>(this->currentSnapshot->prevTerm);
+
+    Json::Value memberRoot;
+    for (auto & addr : this->currentSnapshot->prevMembers) {
+        Json::Value entry;
+        entry["a"] = addr.toAddressString();
+        entry["p"] = addr.getPort();
+        memberRoot.append(entry);
+    }
+    snapshotRoot["members"] = memberRoot;
+
+    snapshotStore->write(snapshotRoot);
+}
+
+void Context::loadSnapshotFromStore()
+{
+    if (!this->snapshotStore)
+        return;
+    if (this->snapshotStore->empty())
+        return;
+
+    Json::Value snapshotRoot = snapshotStore->read();
+    auto snapshot = make_shared<Snapshot>();
+
+    snapshot->prevIndex = snapshotRoot.get("index",0).asUInt();
+    snapshot->prevTerm = snapshotRoot.get("term", 0).asUInt();
+
+    for (unsigned int i=0; i<snapshotRoot["members"].size(); i++) {
+        Json::Value elem = snapshotRoot["members"][i];
+        Address addr;
+        addr.parse(
+            elem.get("a", "0.0.0.0").asString().c_str(),
+            elem.get("p", 0).asUInt());
+        snapshot->prevMembers.push_back(addr);
+    }
+
+    this->prevIndex = snapshot->prevIndex;
+    this->prevTerm = snapshot->prevTerm;
 }
 
 void Context::changeMembership(Command cmd, const Address& address)

@@ -37,9 +37,7 @@ TEST_CASE("Context", "[context]")
 
     Params *    par = new Params();
     Address     myAddr(0x64656667, 8000); // 100.101.102.103:8000
-    auto network = MockNetwork::createNetwork(par);
-    auto conn = network->create(myAddr);
-    auto netnode = make_shared<NetworkNode>(name, nullptr, par, network);
+    Address     leaderAddr(0x64656667, 9000); // 100.101.102.103:9000
 
     // Setup the timeouts
     par->electionTimeout = 10;
@@ -47,13 +45,17 @@ TEST_CASE("Context", "[context]")
     par->rpcTimeout = 5;
 
     SECTION("initialization") {
-        Raft::MemoryBasedContextStore store(par);
-        auto rafthandler = make_shared<Raft::RaftHandler>(nullptr, par, &store, netnode, conn);        
+        auto network = MockNetwork::createNetwork(par);
+        auto conn = network->create(myAddr);
+        auto netnode = make_shared<NetworkNode>(name, nullptr, par, network);
+        Raft::MemoryBasedStorage store(par);
+        auto rafthandler = make_shared<Raft::RaftHandler>(nullptr, par,
+                                &store, nullptr, netnode, conn);        
 
         par->resetCurrtime();
         network->reset();
 
-        netnode->context.init(rafthandler.get(), &store);
+        netnode->context.init(rafthandler.get(), &store, nullptr);
 
         // verify initial values
         REQUIRE(netnode->context.currentTerm == 0);
@@ -65,21 +67,21 @@ TEST_CASE("Context", "[context]")
         REQUIRE(netnode->context.followers.size() == 0);
     }
 
-    SECTION("load/save from the store") {
-        // Test to see that only the relevant portions are restored
-    }
-
     // Test Member APIs
     // Test RaftLogEntry APIs
     SECTION("addEntries") {
-        Raft::MemoryBasedContextStore store(par);
-        auto rafthandler = make_shared<Raft::RaftHandler>(nullptr, par, &store, netnode, conn);        
+        auto network = MockNetwork::createNetwork(par);
+        auto conn = network->create(myAddr);
+        auto netnode = make_shared<NetworkNode>(name, nullptr, par, network);
+        Raft::MemoryBasedStorage store(par);
+        auto rafthandler = make_shared<Raft::RaftHandler>(nullptr, par,
+                                &store, nullptr, netnode, conn);        
 
         par->resetCurrtime();
         network->reset();
 
         netnode->member.memberList.clear();
-        netnode->context.init(rafthandler.get(), &store);
+        netnode->context.init(rafthandler.get(), &store, nullptr);
 
         REQUIRE(netnode->context.logEntries.size() == 1);
 
@@ -103,14 +105,14 @@ TEST_CASE("Context", "[context]")
 
         // Invalid index values
         netnode->member.memberList.clear();
-        netnode->context.init(rafthandler.get(), &store);
+        netnode->context.init(rafthandler.get(), &store, nullptr);
         REQUIRE_THROWS(netnode->context.addEntries(-1, newEntries));
         REQUIRE_THROWS(netnode->context.addEntries(2, newEntries));
         REQUIRE_THROWS(netnode->context.addEntries(1000, newEntries));
 
         // normal ops
         netnode->member.memberList.clear();
-        netnode->context.init(rafthandler.get(), &store);
+        netnode->context.init(rafthandler.get(), &store, nullptr);
         netnode->context.addEntries(1, newEntries);
         REQUIRE(netnode->context.logEntries.size() == 4);
         REQUIRE(netnode->member.memberList.size() == 1);
@@ -118,7 +120,7 @@ TEST_CASE("Context", "[context]")
 
         // should overwrite with no change
         netnode->member.memberList.clear();
-        netnode->context.init(rafthandler.get(), &store);
+        netnode->context.init(rafthandler.get(), &store, nullptr);
         netnode->context.addEntries(1, newEntries);
         netnode->context.addEntries(1, newEntries);
         REQUIRE(netnode->context.logEntries.size() == 4);
@@ -130,7 +132,7 @@ TEST_CASE("Context", "[context]")
 
         // Check overwriting
         netnode->member.memberList.clear();
-        netnode->context.init(rafthandler.get(), &store);
+        netnode->context.init(rafthandler.get(), &store, nullptr);
         netnode->context.addEntries(1, newEntries);
         REQUIRE(netnode->member.memberList.size() == 1);
         netnode->context.addEntries(3, newEntries3);
@@ -141,7 +143,7 @@ TEST_CASE("Context", "[context]")
         // addition of same address twice
         if (DEBUG_) {
             netnode->member.memberList.clear();
-            netnode->context.init(rafthandler.get(), &store);
+            netnode->context.init(rafthandler.get(), &store, nullptr);
             netnode->context.addEntries(1, newEntries);
             REQUIRE_THROWS(netnode->context.addEntries(2, newEntries));
         }
@@ -149,20 +151,92 @@ TEST_CASE("Context", "[context]")
         // Test remove of non-existent node
         if (DEBUG_) {
             netnode->member.memberList.clear();
-            netnode->context.init(rafthandler.get(), &store);
+            netnode->context.init(rafthandler.get(), &store, nullptr);
             REQUIRE_THROWS(netnode->context.addEntries(1, newEntries2));
         }
 
         // Term mismatch
         if (DEBUG_) {
             netnode->member.memberList.clear();
-            netnode->context.init(rafthandler.get(), &store);
+            netnode->context.init(rafthandler.get(), &store, nullptr);
             netnode->context.addEntries(1, newEntries);
             netnode->context.addEntries(4, newEntries2);
             REQUIRE_THROWS(netnode->context.addEntries(6, newEntries));
         }
 
     }
+
+    SECTION("snapshot test") {
+        // Test to see that only the relevant portions are restored
+        auto network = MockNetwork::createNetwork(par);
+        auto conn = network->create(myAddr);
+        auto netnode = make_shared<NetworkNode>(name, nullptr, par, network);
+        Raft::MemoryBasedStorage store(par);
+        Raft::MemoryBasedStorage snapshotStore(par);
+        auto rafthandler = make_shared<Raft::RaftHandler>(nullptr, par,
+                                &store, &snapshotStore, netnode, conn);
+        netnode->registerHandler(ConnectType::MEMBER,
+                                 conn,
+                                 rafthandler);
+
+        netnode->nodeStart(leaderAddr, par->idleTimeout);
+
+        par->logCompactionThreshold = 5;
+
+        netnode->member.memberList.clear();
+        netnode->context.init(rafthandler.get(), &store, nullptr);
+
+        vector<RaftLogEntry>    newEntries;
+        Address addr1(0x64656667, 8000); // 100.101.102.103:8000
+        Address addr2(0x64656667, 8001); // 100.101.102.103:8001
+        Address addr3(0x64656667, 8002); // 100.101.102.103:8002
+        Address addr4(0x64656667, 8003); // 100.101.102.103:8003
+
+        newEntries.clear();        
+        newEntries.emplace_back(1, Command::CMD_ADD_SERVER, addr1);
+        newEntries.emplace_back(2, Command::CMD_ADD_SERVER, addr2);
+        newEntries.emplace_back(2, Command::CMD_ADD_SERVER, addr3);
+        netnode->context.addEntries(1, newEntries);
+        netnode->receiveMessages();
+        netnode->processQueuedMessages();
+
+        REQUIRE(netnode->context.currentSnapshot == nullptr);
+        REQUIRE(netnode->context.prevIndex == 0);
+
+        newEntries.clear();
+        newEntries.emplace_back(2, Command::CMD_REMOVE_SERVER, addr3);
+        netnode->context.addEntries(4, newEntries);
+        netnode->receiveMessages();
+        netnode->processQueuedMessages();
+
+        REQUIRE(netnode->context.currentSnapshot != nullptr);
+        REQUIRE(netnode->context.currentSnapshot->prevIndex == 4);
+        REQUIRE(netnode->context.currentSnapshot->prevTerm == 2);
+        REQUIRE(netnode->context.currentSnapshot->prevMembers.size() == 2);
+        REQUIRE(netnode->context.prevIndex == 4);
+        REQUIRE_THROWS(netnode->context.termAt(5));
+        REQUIRE_THROWS(netnode->context.termAt(4));
+
+        newEntries.clear();
+        newEntries.emplace_back(4, Command::CMD_REMOVE_SERVER, addr2);
+        newEntries.emplace_back(4, Command::CMD_ADD_SERVER, addr2);
+        newEntries.emplace_back(4, Command::CMD_ADD_SERVER, addr3);
+        newEntries.emplace_back(5, Command::CMD_ADD_SERVER, addr4);
+        netnode->context.addEntries(5, newEntries);
+        netnode->receiveMessages();
+        netnode->processQueuedMessages();
+
+        REQUIRE(netnode->context.currentSnapshot != nullptr);
+        REQUIRE(netnode->context.currentSnapshot->prevIndex == 4);
+        REQUIRE(netnode->context.currentSnapshot->prevTerm == 2);
+        REQUIRE(netnode->context.currentSnapshot->prevMembers.size() == 2);
+        REQUIRE(netnode->context.prevIndex == 4);
+        REQUIRE_THROWS(netnode->context.termAt(4));
+        REQUIRE(netnode->context.termAt(5) == 4);
+        REQUIRE(netnode->context.termAt(8) == 5);
+        REQUIRE_THROWS(netnode->context.termAt(9));
+    }
+
 }
 
 TEST_CASE("MockNetwork filter", "[MockNetwork][filter]") {

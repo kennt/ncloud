@@ -107,10 +107,10 @@ struct RaftLogEntry {
 //
 // The entire context is read/written at once.
 // ==================
-class ContextStoreInterface
+class StorageInterface
 {
 public:
-    virtual ~ContextStoreInterface() {};
+    virtual ~StorageInterface() {};
 
     // Reads in the entire persisted context
     virtual Json::Value read() = 0;
@@ -131,11 +131,11 @@ public:
 // Provides the basic interface to store the context
 // to a file in the filesystem.
 // ==================
-class FileBasedContextStore : public ContextStoreInterface
+class FileBasedStorage : public StorageInterface
 {
 public:
-    FileBasedContextStore(const char *filename);
-    virtual ~FileBasedContextStore();
+    FileBasedStorage(const char *filename);
+    virtual ~FileBasedStorage();
 
     virtual Json::Value read() override;
     virtual void write(const Json::Value& value) override;
@@ -156,11 +156,11 @@ protected:
 // persisted state associated with it by default. (although you
 // could modify the data member manually).
 // ==================
-class MemoryBasedContextStore : public ContextStoreInterface
+class MemoryBasedStorage : public StorageInterface
 {
 public:
-    MemoryBasedContextStore(Params *par);
-    virtual ~MemoryBasedContextStore() {}
+    MemoryBasedStorage(Params *par);
+    virtual ~MemoryBasedStorage() {}
 
     virtual Json::Value read() override;
     virtual void write(const Json::Value& value) override;
@@ -225,7 +225,8 @@ struct Context
     {}
 
     void init(RaftHandler *handler,
-              ContextStoreInterface *store);
+              StorageInterface *store,
+              StorageInterface *snapshotStore);
 
     // ==================
     // Implementation variables
@@ -244,7 +245,8 @@ struct Context
     // it is assumed that this lifetime is longer than the
     // lifetime of the context object (thus just a pointer to
     // the store interface is held).
-    ContextStoreInterface * store;
+    StorageInterface * store;
+    StorageInterface * snapshotStore;
 
     // ==================
     // Volatile state stored on all servers
@@ -286,6 +288,7 @@ struct Context
     // Snapshot information
     // This contains information about the current snapshot
     // if one has been taken (leader) or has been applied (follower).
+    // The currentSnapshot is persisted.
     shared_ptr<Snapshot>    currentSnapshot;
 
     // This is kept by the follower to accumulate the state
@@ -326,6 +329,8 @@ struct Context
     // Serialization APIs
     void saveToStore();
     void loadFromStore();
+    void saveSnapshotToStore();
+    void loadSnapshotFromStore();
 
     // ==================
     // Volatile state stored on a leader node for all
@@ -373,7 +378,13 @@ struct Context
     void switchToCandidate();
     void switchToFollower();
 
-    INDEX getLastLogIndex()   { return this->prevIndex + this->logEntries.size() - 1; }
+    INDEX getLastLogIndex()
+    { 
+        if (this->prevIndex)
+            return this->prevIndex + this->logEntries.size();
+        else
+            return this->logEntries.size() - 1;
+    }
     TERM getLastLogTerm()    { return this->logEntries.back().termReceived; }
 
     // Use this to trigger sending of log updates
