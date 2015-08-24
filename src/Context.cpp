@@ -398,7 +398,7 @@ void Context::applyCommittedEntries()
             this->handler->applyLogEntry(this->entryAt(i));
         }
         this->lastAppliedIndex = this->commitIndex;
-        this->setLogChanged(true);
+        setLogChanged(true);
     }
 }
 
@@ -432,6 +432,52 @@ void Context::checkCommitIndex(INDEX sentLogIndex)
     if (2*total > this->followers.size()) {
         this->commitIndex = sentLogIndex;
     }
+}
+
+vector<Address> Context::runLogEntries(INDEX toIndex)
+{
+    if (toIndex < this->prevIndex)
+        throw AppException("Cannot build the config, index before snapshot");
+
+    vector<Address> addresses;
+
+    if (this->currentSnapshot)
+        addresses = this->currentSnapshot->prevMembers;
+
+    for (INDEX i=this->prevIndex+1; i<=toIndex; i++) {
+        auto entry = this->entryAt(i);
+        switch (entry.command) {
+            case Command::CMD_ADD_SERVER:
+                addresses.push_back(entry.address);
+                break;
+            case Command::CMD_REMOVE_SERVER:
+                addresses.erase(
+                    std::remove(addresses.begin(), addresses.end(), entry.address),
+                    addresses.end());
+                break;
+            default:
+                break;
+        }
+    }
+
+    return addresses;
+}
+
+void Context::takeSnapshot()
+{
+    auto node = this->handler->node();
+    auto snapshot = make_shared<Snapshot>();
+
+    snapshot->prevIndex = this->commitIndex;
+    snapshot->prevTerm = termAt(snapshot->prevIndex);
+    snapshot->prevMembers = runLogEntries(snapshot->prevIndex);
+
+    // Truncate the log
+    this->logEntries.erase(this->logEntries.begin(),
+                           this->logEntries.begin() + realIndex(this->commitIndex) + 1);
+    this->currentSnapshot = snapshot;
+    this->prevIndex = snapshot->prevIndex;
+    this->prevTerm = snapshot->prevTerm;
 }
 
 void SanityTestLog::init(Snapshot *snapshot)

@@ -309,21 +309,30 @@ struct Context
     { 
         return entryAt(index).termReceived;
     }
+
     // Returns the entry at the given index (offset by the snapshot)
     RaftLogEntry entryAt(INDEX index)
+    {
+        return logEntries[realIndex(index)];
+    }
+
+    // Returns the actual position of the index (offset by the snapshot)
+    INDEX realIndex(INDEX index)
     {
         // The calculations get weird because of the behavior when prevIndex = 0.
         // A prevIndex > 0 indicates a snapshot including prevIndex
         // however prevIndex == 0, indicates no snapshot
+        //$ TODO: all of this would be unnessary if prevIndex was -1
+        // if no snapshot existed, however an index is an unsigned value.
         if (index > getLastLogIndex())
             throw AppException("index above bounds");
 
         if (prevIndex == 0)
-            return logEntries[index];
+            return index;
 
         if (index <= prevIndex)
             throw AppException("index below bounds");
-        return logEntries[index - prevIndex - 1];
+        return index - prevIndex - 1;
     }
 
     // Serialization APIs
@@ -372,6 +381,13 @@ struct Context
 
     // Applies committed but not-yet-applied entries
     void applyCommittedEntries();
+
+    // Creates a snapshot of the current config and saves it
+    void takeSnapshot();
+
+    // Runs through the log entries to build the configuration
+    // (used for snapshotting).  This will run up and including toIndex.
+    vector<Address> runLogEntries(INDEX toIndex);
 
     // APIs for switching states
     void switchToLeader();

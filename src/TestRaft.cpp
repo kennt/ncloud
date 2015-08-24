@@ -1479,8 +1479,20 @@ TEST_CASE("Raft elections", "[raft][election][system]")
 // Test cases for log compaction
 TEST_CASE("Raft log compaction", "[raft][snapshot]") {
     // test snapshot sending
-    // multiple messages
-    // test errors
+    // Main node: 9000
+    // Nodes: 9000 (leader), 8100
+    // Action: start up 9000 (leader), test updating via snapshot
+    SECTION("basic snapshot update - leader") {
+        // Create the leader
+    }
+
+    SECTION("basic snapshot update - follower") {
+        // Create the leader
+    }
+
+    SECTION("basic snapshot update - system test") {
+        // Create the leader
+    }
 }
 
 // Test cases for log operations

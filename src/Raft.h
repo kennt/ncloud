@@ -674,9 +674,6 @@ public:
     void setElectionTimeoutModifier(int tm)
         { this->electionTimeoutModifier = tm; }
 
-    // Creates a snapshot of the current config and saves it
-    void takeSnapshot();
-
 protected:
     Log *                   log;
     Params *                par;

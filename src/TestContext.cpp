@@ -193,9 +193,14 @@ TEST_CASE("Context", "[context]")
         Address addr4(0x64656667, 8003); // 100.101.102.103:8003
 
         newEntries.clear();        
-        newEntries.emplace_back(1, Command::CMD_ADD_SERVER, addr1);
-        newEntries.emplace_back(2, Command::CMD_ADD_SERVER, addr2);
-        newEntries.emplace_back(2, Command::CMD_ADD_SERVER, addr3);
+        newEntries.emplace_back(10, Command::CMD_ADD_SERVER, addr1);
+        newEntries.emplace_back(20, Command::CMD_ADD_SERVER, addr2);
+        newEntries.emplace_back(30, Command::CMD_ADD_SERVER, addr3);
+        newEntries.emplace_back(40, Command::CMD_REMOVE_SERVER, addr3);
+        newEntries.emplace_back(50, Command::CMD_REMOVE_SERVER, addr2);
+        newEntries.emplace_back(60, Command::CMD_ADD_SERVER, addr2);
+        newEntries.emplace_back(70, Command::CMD_ADD_SERVER, addr3);
+        newEntries.emplace_back(80, Command::CMD_ADD_SERVER, addr4);
         netnode->context.addEntries(1, newEntries);
         netnode->receiveMessages();
         netnode->processQueuedMessages();
@@ -203,37 +208,17 @@ TEST_CASE("Context", "[context]")
         REQUIRE(netnode->context.currentSnapshot == nullptr);
         REQUIRE(netnode->context.prevIndex == 0);
 
-        newEntries.clear();
-        newEntries.emplace_back(2, Command::CMD_REMOVE_SERVER, addr3);
-        netnode->context.addEntries(4, newEntries);
+        netnode->context.commitIndex = 4;
         netnode->receiveMessages();
         netnode->processQueuedMessages();
 
         REQUIRE(netnode->context.currentSnapshot != nullptr);
         REQUIRE(netnode->context.currentSnapshot->prevIndex == 4);
-        REQUIRE(netnode->context.currentSnapshot->prevTerm == 2);
-        REQUIRE(netnode->context.currentSnapshot->prevMembers.size() == 2);
-        REQUIRE(netnode->context.prevIndex == 4);
-        REQUIRE_THROWS(netnode->context.termAt(5));
-        REQUIRE_THROWS(netnode->context.termAt(4));
-
-        newEntries.clear();
-        newEntries.emplace_back(4, Command::CMD_REMOVE_SERVER, addr2);
-        newEntries.emplace_back(4, Command::CMD_ADD_SERVER, addr2);
-        newEntries.emplace_back(4, Command::CMD_ADD_SERVER, addr3);
-        newEntries.emplace_back(5, Command::CMD_ADD_SERVER, addr4);
-        netnode->context.addEntries(5, newEntries);
-        netnode->receiveMessages();
-        netnode->processQueuedMessages();
-
-        REQUIRE(netnode->context.currentSnapshot != nullptr);
-        REQUIRE(netnode->context.currentSnapshot->prevIndex == 4);
-        REQUIRE(netnode->context.currentSnapshot->prevTerm == 2);
+        REQUIRE(netnode->context.currentSnapshot->prevTerm == 40);
         REQUIRE(netnode->context.currentSnapshot->prevMembers.size() == 2);
         REQUIRE(netnode->context.prevIndex == 4);
         REQUIRE_THROWS(netnode->context.termAt(4));
-        REQUIRE(netnode->context.termAt(5) == 4);
-        REQUIRE(netnode->context.termAt(8) == 5);
+        REQUIRE(netnode->context.termAt(5) == 50);
         REQUIRE_THROWS(netnode->context.termAt(9));
     }
 

@@ -832,6 +832,10 @@ void RaftHandler::start(const Address &leader)
 {
     auto node = getNetworkNode();
 
+    // Check for configuration consistency problems
+    if (par->logCompactionThreshold > 0 && !this->snapshotStore)
+        throw AppException("configuration error: enabling snapshots but no storage specificied");
+
     node->member.inGroup = false;
     node->member.inited = true;
 
@@ -946,6 +950,8 @@ void RaftHandler::onAppendEntries(const Address& from, const RawMessage *raw)
     else if (node->context.prevIndex && (message->prevLogIndex <= node->context.prevIndex)) {
         // We have a snapshot, so we will have to go all the way
         // back for the data
+        //$ TODO: Should add the feature where we can shortcut this
+        // process, because it will go all the way back to
         if (message->prevLogIndex > 0)
             reply.success = false;
         else {
@@ -1212,8 +1218,9 @@ void RaftHandler::onTimeout()
 
     // Has the number of entries grown too large?
     if ((par->logCompactionThreshold > 0) &&
+        (node->context.commitIndex > node->context.prevIndex) &&
         (node->context.logEntries.size() >= par->logCompactionThreshold)) {
-        this->takeSnapshot();
+            node->context.takeSnapshot();
     }
 }
 
@@ -1369,20 +1376,3 @@ void RaftHandler::onCompletedMemberChange(Transaction *trans, bool success)
     this->memberchange = nullptr;
 }
 
-void RaftHandler::takeSnapshot()
-{
-    auto node = getNetworkNode();
-    auto snapshot = make_shared<Snapshot>();
-    snapshot->prevIndex = node->context.lastAppliedIndex;
-    snapshot->prevTerm = node->context.termAt(snapshot->prevIndex);
-
-    for (auto & mem : node->member.memberList)
-        snapshot->prevMembers.push_back(mem.address);
-
-    node->context.currentSnapshot = snapshot;
-    node->context.prevIndex = snapshot->prevIndex;
-    node->context.prevTerm = snapshot->prevTerm;
-
-    // Truncate the log
-    node->context.logEntries.clear();
-}
