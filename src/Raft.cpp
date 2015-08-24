@@ -49,7 +49,7 @@ unique_ptr<RawMessage> HeaderOnlyMessage::toRawMessage(const Address& from,
 void HeaderOnlyMessage::load(const RawMessage *raw)
 {
     istringstream is(std::string((const char *)raw->data.get(), raw->size));
-    this->read(is);
+    read(is);
 }
 
 unique_ptr<RawMessage> AppendEntriesMessage::toRawMessage(const Address &from,
@@ -57,7 +57,7 @@ unique_ptr<RawMessage> AppendEntriesMessage::toRawMessage(const Address &from,
 {
     stringstream    ss;
 
-    this->write(ss);
+    write(ss);
     write_raw<Address>(ss, this->leaderAddress);
     write_raw<INDEX>(ss, this->prevLogIndex);
     write_raw<TERM>(ss, this->prevLogTerm);
@@ -74,7 +74,7 @@ void AppendEntriesMessage::load(const RawMessage *raw)
 {
     istringstream is(std::string((const char *)raw->data.get(), raw->size));
 
-    this->read(is);
+    read(is);
     assert(this->msgtype == MessageType::APPEND_ENTRIES);
 
     this->leaderAddress = read_raw<Address>(is);
@@ -96,7 +96,7 @@ unique_ptr<RawMessage> AppendEntriesReply::toRawMessage(const Address &from,
 {
     stringstream    ss;
 
-    this->write(ss);
+    write(ss);
     write_raw<bool>(ss, this->success);
 
     return rawMessageFromStream(from, to, ss);
@@ -106,7 +106,7 @@ void AppendEntriesReply::load(const RawMessage *raw)
 {
     istringstream is(std::string((const char *)raw->data.get(), raw->size));
 
-    this->read(is);
+    read(is);
     assert(this->msgtype == MessageType::APPEND_ENTRIES_REPLY);
 
     this->success = read_raw<bool>(is);
@@ -117,7 +117,7 @@ unique_ptr<RawMessage> RequestVoteMessage::toRawMessage(const Address &from,
 {
     stringstream    ss;
 
-    this->write(ss);
+    write(ss);
     write_raw<Address>(ss, this->candidate);
     write_raw<INDEX>(ss, this->lastLogIndex);
     write_raw<TERM>(ss, this->lastLogTerm);
@@ -129,7 +129,7 @@ void RequestVoteMessage::load(const RawMessage *raw)
 {
     istringstream is(std::string((const char *)raw->data.get(), raw->size));
 
-    this->read(is);
+    read(is);
     assert(this->msgtype == MessageType::REQUEST_VOTE);
 
     this->candidate = read_raw<Address>(is);
@@ -142,7 +142,7 @@ unique_ptr<RawMessage> RequestVoteReply::toRawMessage(const Address &from,
 {
     stringstream    ss;
 
-    this->write(ss);
+    write(ss);
     write_raw<bool>(ss, this->voteGranted);
 
     return rawMessageFromStream(from, to, ss);
@@ -152,7 +152,7 @@ void RequestVoteReply::load(const RawMessage *raw)
 {
     istringstream is(std::string((const char *)raw->data.get(), raw->size));
 
-    this->read(is);
+    read(is);
     assert(this->msgtype == MessageType::REQUEST_VOTE_REPLY);
 
     this->voteGranted = read_raw<bool>(is);
@@ -163,7 +163,7 @@ unique_ptr<RawMessage> InstallSnapshotMessage::toRawMessage(const Address& from,
 {
     stringstream    ss;
 
-    this->write(ss);
+    write(ss);
     write_raw<Address>(ss, this->leaderAddress);
     write_raw<INDEX>(ss, this->lastIndex);
     write_raw<TERM>(ss, this->lastTerm);
@@ -179,7 +179,7 @@ void InstallSnapshotMessage::load(const RawMessage *raw)
 {
     istringstream is(std::string((const char *)raw->data.get(), raw->size));
 
-    this->read(is);
+    read(is);
     assert(this->msgtype == MessageType::INSTALL_SNAPSHOT);
 
     this->leaderAddress = read_raw<Address>(is);
@@ -200,7 +200,7 @@ unique_ptr<RawMessage> InstallSnapshotReply::toRawMessage(const Address& from,
 {
     stringstream ss;
 
-    this->write(ss);
+    write(ss);
 
     return rawMessageFromStream(from, to, ss);
 }
@@ -209,7 +209,7 @@ void InstallSnapshotReply::load(const RawMessage *raw)
 {
     istringstream is(std::string((const char *)raw->data.get(), raw->size));
 
-    this->read(is);
+    read(is);
     assert(this->msgtype == MessageType::INSTALL_SNAPSHOT_REPLY);
 }
 
@@ -537,7 +537,7 @@ void GroupUpdateTransaction::init(const MemberInfo& member, INDEX lastIndex, TER
     vector<Address> members;
     for (auto & elem : member.memberList)
         members.push_back(elem.address);
-    this->init(members, lastIndex, lastTerm);
+    init(members, lastIndex, lastTerm);
 }
 
 void GroupUpdateTransaction::init(const vector<Address>& members, INDEX lastIndex, TERM lastTerm)
@@ -666,7 +666,7 @@ void MemberChangeTransaction::start()
     else if (this->command == CMD_REMOVE_SERVER) {
         // skip this step, move to the next step
         // there's no need to update the node to be removed
-        this->onServerUpdateCompleted(this, true);
+        onServerUpdateCompleted(this, true);
     }
     else {
         throw AppException("Unexpected comamnd, should not be here");
@@ -875,7 +875,7 @@ void RaftHandler::start(const Address &leader)
     }
 
     // Start the election timeout
-    this->election->startTimeout(this->getElectionTimeout());
+    this->election->startTimeout(getElectionTimeout());
 }
 
 // This is a callback and is called when the connection has received
@@ -963,7 +963,7 @@ void RaftHandler::onAppendEntries(const Address& from, const RawMessage *raw)
             node->context.prevIndex = 0;
             node->context.prevTerm = 0;
 
-            this->applyLogEntry(CMD_CLEAR_LIST, Address());
+            applyLogEntry(CMD_CLEAR_LIST, Address());
             node->context.logEntries.clear();
             node->context.logEntries.emplace_back();
             node->context.addEntries(0, message->entries);
@@ -993,7 +993,7 @@ void RaftHandler::onAppendEntries(const Address& from, const RawMessage *raw)
     if (from == node->context.currentLeader)
         election->resetTimeout(par->getCurrtime());
     auto rawReply = reply.toRawMessage(address(), from);
-    this->connection()->send(rawReply.get());
+    connection()->send(rawReply.get());
 }
 
 void RaftHandler::onInstallSnapshot(const Address& from,
@@ -1040,9 +1040,9 @@ void RaftHandler::onInstallSnapshot(const Address& from,
             node->context.prevTerm = node->context.currentSnapshot->prevTerm;
 
             // Update the memberinfo
-            this->applyLogEntry(Command::CMD_CLEAR_LIST, Address());
+            applyLogEntry(Command::CMD_CLEAR_LIST, Address());
             for (auto & addr : snapshot->prevMembers) {
-                this->applyLogEntry(Command::CMD_ADD_SERVER, addr);
+                applyLogEntry(Command::CMD_ADD_SERVER, addr);
             }
             node->context.setLogChanged(true);
             node->context.lastAppliedIndex = node->context.prevIndex;
@@ -1053,7 +1053,7 @@ void RaftHandler::onInstallSnapshot(const Address& from,
     }
 
     auto rawReply = reply.toRawMessage(address(), from);
-    this->connection()->send(rawReply.get());
+    connection()->send(rawReply.get());
 }
 
 void RaftHandler::onRequestVote(const Address& from, const RawMessage *raw)
@@ -1131,7 +1131,7 @@ void RaftHandler::onChangeServerCommand(shared_ptr<CommandMessage> message,
         reply->errmsg = "Add/RemoveServer in progress, this operation is not allowed";
     }
     else {
-        int transIdUpdate = this->getNextMessageId();
+        int transIdUpdate = getNextMessageId();
         auto trans = make_shared<MemberChangeTransaction>(log, par, this);
         trans->transId = transIdUpdate;
         trans->term = node->context.currentTerm;
@@ -1147,12 +1147,12 @@ void RaftHandler::onChangeServerCommand(shared_ptr<CommandMessage> message,
         trans->commandMessage = message;
 
         this->memberchange = trans;
-        this->addTransaction(trans);
+        addTransaction(trans);
 
         // Get this started!
         trans->start();
         //$ TODO: what should the overall timeout be here?
-        trans->startTimeout(5*this->getElectionTimeout());
+        trans->startTimeout(5*getElectionTimeout());
     }
 
     if (reply) {
@@ -1203,11 +1203,11 @@ void RaftHandler::onTimeout()
             update->init(node->member,
                          node->context.getLastLogIndex(),
                          node->context.getLastLogTerm());
-            this->addTransaction(update);
+            addTransaction(update);
 
             update->start();
 
-            update->setLifetime(5*this->getElectionTimeout());
+            update->setLifetime(5*getElectionTimeout());
             update->startTimeout(par->idleTimeout);
 
             node->context.setLogChanged(false);
@@ -1266,7 +1266,7 @@ void RaftHandler::applyLogEntry(Command command,
 void RaftHandler::applyLogEntries(const vector<RaftLogEntry> &entries)
 {
     for (const auto & elem : entries) {
-        this->applyLogEntry(elem);
+        applyLogEntry(elem);
     }
 }
 
@@ -1371,7 +1371,7 @@ void RaftHandler::onCompletedMemberChange(Transaction *trans, bool success)
 {
     if (this->memberchange) {
         this->memberchange->close();
-        this->removeTransaction(this->memberchange->transId);
+        removeTransaction(this->memberchange->transId);
     }
     this->memberchange = nullptr;
 }

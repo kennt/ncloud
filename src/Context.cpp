@@ -130,7 +130,7 @@ void Context::init(RaftHandler *handler,
     this->prevTerm = 0;
 
     // Reload the persisted state
-    this->loadFromStore();
+    loadFromStore();
 }
 
 // Loads the context from the Storage, then
@@ -156,7 +156,7 @@ void Context::loadFromStore()
     this->votedFor.parse(
         root.get("votedFor", "0.0.0.0").asString().c_str(), port);
 
-    this->loadSnapshotFromStore();
+    loadSnapshotFromStore();
 
     this->logEntries.clear();   // reset the log
 
@@ -203,7 +203,7 @@ void Context::saveToStore()
     root["log"] = log;
 
     store->write(root);
-    this->saveSnapshotToStore();
+    saveSnapshotToStore();
 }
 
 void Context::saveSnapshotToStore()
@@ -282,7 +282,7 @@ void Context::changeMembership(Command cmd, const Address& address)
 
 void Context::onTimeout()
 {
-    this->applyCommittedEntries();
+    applyCommittedEntries();
 }
 
 void Context::startElection(const MemberInfo& member)
@@ -316,13 +316,13 @@ void Context::addEntries(INDEX startIndex, vector<RaftLogEntry> & entries)
         throw AppException("Context log index out-of-range");
     }
 
-    this->setLogChanged(true);
+    setLogChanged(true);
 
     bool    rebuild = false;
     INDEX   index = 0;
 
     // Is there an overlap?
-    if (startIndex <= this->getLastLogIndex()) {
+    if (startIndex <= getLastLogIndex()) {
         // If are possibly removing entries, need to rebuild
         // the state machine from scratch (or we could reverse
         // the entries but need to check that we don't delete
@@ -334,7 +334,7 @@ void Context::addEntries(INDEX startIndex, vector<RaftLogEntry> & entries)
         // Look for entries that are in conflict
         for (index=0; index<entries.size(); index++) {
             // Stop if we go past the log size
-            if (startIndex+index > this->getLastLogIndex())
+            if (startIndex+index > getLastLogIndex())
                 break;
 
             if (entries[index].termReceived != termAt(startIndex+index)) {
@@ -368,7 +368,7 @@ void Context::addEntries(INDEX startIndex, vector<RaftLogEntry> & entries)
             }
         }
         this->handler->applyLogEntries(this->logEntries);
-        this->lastAppliedIndex = this->getLastLogIndex();
+        this->lastAppliedIndex = getLastLogIndex();
     }
 
     // Append on all other entries
@@ -395,7 +395,7 @@ void Context::applyCommittedEntries()
     if (this->commitIndex > this->lastAppliedIndex) {
         for (INDEX i=this->lastAppliedIndex; i<=this->commitIndex; i++) {
             // Apply log entries to match
-            this->handler->applyLogEntry(this->entryAt(i));
+            this->handler->applyLogEntry(entryAt(i));
         }
         this->lastAppliedIndex = this->commitIndex;
         setLogChanged(true);
@@ -445,7 +445,7 @@ vector<Address> Context::runLogEntries(INDEX toIndex)
         addresses = this->currentSnapshot->prevMembers;
 
     for (INDEX i=this->prevIndex+1; i<=toIndex; i++) {
-        auto entry = this->entryAt(i);
+        auto entry = entryAt(i);
         switch (entry.command) {
             case Command::CMD_ADD_SERVER:
                 addresses.push_back(entry.address);
