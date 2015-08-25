@@ -1655,6 +1655,74 @@ TEST_CASE("Raft log compaction", "[raft][snapshot]") {
 
     SECTION("basic snapshot update - system test") {
         // Create the leader
+        // Create child nodes, let them run
+        // Check the state of the nodes
+        auto network = MockNetwork::createNetwork(&params);
+        Raft::MemoryBasedStorage leaderstore(&params);
+        Raft::MemoryBasedStorage store(&params);
+        Raft::MemoryBasedStorage snapshotStore(&params);
+        shared_ptr<RaftHandler> leaderHandler;
+        vector<shared_ptr<NetworkNode>> nodes;
+
+        auto root = initializeStore(leaderAddr, vector<Address>());
+        append(root["log"], 2, Command::CMD_ADD_SERVER, node1Addr);
+        append(root["log"], 2, Command::CMD_REMOVE_SERVER, node1Addr);
+        append(root["log"], 2, Command::CMD_ADD_SERVER, node2Addr);
+        append(root["log"], 2, Command::CMD_REMOVE_SERVER, node2Addr);
+        root["currentTerm"] = 2;
+        leaderstore.write(root);
+
+        // Create the leader
+        auto nettuple = createNode(network, &params, &leaderstore, &snapshotStore,
+                                   leaderAddr, leaderAddr);
+        nodes.push_back(std::get<0>(nettuple));
+        leaderHandler = std::get<1>(nettuple);
+
+        // Transition candidate to leader
+        runMessageLoop(nodes[0], &params, params.electionTimeout);
+        REQUIRE(nodes[0]->context.currentState == State::LEADER);
+        REQUIRE(nodes[0]->member.memberList.size() == 1);
+
+        // Create the two follower nodes
+        nettuple = createNode(network, &params, &store, &snapshotStore,
+                              leaderAddr, node1Addr);
+        nodes.push_back(std::get<0>(nettuple));
+        REQUIRE(nodes.back()->context.currentState == State::FOLLOWER);
+
+        nettuple = createNode(network, &params, &store, &snapshotStore,
+                              leaderAddr, node2Addr);
+        nodes.push_back(std::get<0>(nettuple));
+        REQUIRE(nodes.back()->context.currentState == State::FOLLOWER);
+
+        // Tell the leader to add the child nodes
+        leaderHandler->onChangeServerCommand(nullptr,
+                                             Command::CMD_ADD_SERVER,
+                                             node1Addr);
+        runMessageLoopUntilSilent(network, nodes, &params);
+
+        leaderHandler->onChangeServerCommand(nullptr,
+                                             Command::CMD_ADD_SERVER,
+                                             node2Addr);
+        runMessageLoopUntilSilent(network, nodes, &params);
+
+        REQUIRE(nodes[0]->context.currentState == State::LEADER);
+        REQUIRE(nodes[0]->member.memberList.size() == 3);
+        REQUIRE(nodes[0]->context.currentSnapshot != nullptr);
+        REQUIRE(nodes[0]->context.prevIndex == 7);
+        REQUIRE(nodes[0]->context.commitIndex == 7);
+        REQUIRE(nodes[1]->context.currentSnapshot != nullptr);
+        REQUIRE(nodes[1]->context.prevIndex == 5);
+        REQUIRE(nodes[1]->context.commitIndex == 6);
+        REQUIRE(nodes[2]->context.currentSnapshot != nullptr);
+        REQUIRE(nodes[2]->context.prevIndex == 5);
+        REQUIRE(nodes[2]->context.commitIndex == 6);
+
+        // Need one more heartbeat for the commits to catch up
+        runMessageLoop(nodes[0], &params, params.electionTimeout);
+        runMessageLoopUntilSilent(network, nodes, &params);
+        REQUIRE(nodes[0]->context.commitIndex == 7);
+        REQUIRE(nodes[1]->context.commitIndex == 7);
+        REQUIRE(nodes[2]->context.commitIndex == 7);
     }
 }
 
