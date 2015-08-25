@@ -167,6 +167,7 @@ unique_ptr<RawMessage> InstallSnapshotMessage::toRawMessage(const Address& from,
     write_raw<Address>(ss, this->leaderAddress);
     write_raw<INDEX>(ss, this->lastIndex);
     write_raw<TERM>(ss, this->lastTerm);
+    write_raw<unsigned int>(ss, this->offset);
     write_raw<unsigned int>(ss, static_cast<unsigned int>(this->addresses.size()));
     for (auto & addr : this->addresses) {
         write_raw<Address>(ss, addr);
@@ -185,6 +186,7 @@ void InstallSnapshotMessage::load(const RawMessage *raw)
     this->leaderAddress = read_raw<Address>(is);
     this->lastIndex = read_raw<INDEX>(is);
     this->lastTerm = read_raw<TERM>(is);
+    this->offset = read_raw<unsigned int>(is);
 
     size_t count = read_raw<unsigned int>(is);
     this->addresses.clear();
@@ -500,10 +502,10 @@ void UpdateTransaction::sendAppendEntriesRequest(INDEX index)
         for (size_t i=0; i<count; i++)
             install.addresses.push_back(snapshot->prevMembers[i+this->offset]);
 
-        install.offset = this->offset + static_cast<unsigned int>(install.addresses.size());
-        install.done = (install.offset == snapshot->prevMembers.size());
+        install.offset = this->offset;
+        this->offset = this->offset + static_cast<unsigned int>(install.addresses.size());
+        install.done = (this->offset == snapshot->prevMembers.size());
 
-        this->offset = install.offset;
         this->lastSentLogIndex = snapshot->prevIndex;
         this->lastSentLogTerm = snapshot->prevTerm;
 
@@ -816,7 +818,7 @@ void MemberChangeTransaction::onCommandUpdateCompleted(Transaction *trans,
     // We're done!  Success or failure
     // Notify the command client of the result
 
-    if (this->command) {
+    if (this->commandMessage) {
         auto reply = this->commandMessage->makeReply(success);
         reply->address = node->context.currentLeader;
 
@@ -947,7 +949,7 @@ void RaftHandler::onAppendEntries(const Address& from, const RawMessage *raw)
              message->prevLogTerm != node->context.termAt(message->prevLogIndex)) {
         reply.success = false;
     }
-    else if (node->context.prevIndex && (message->prevLogIndex <= node->context.prevIndex)) {
+    else if (node->context.prevIndex && (message->prevLogIndex < node->context.prevIndex)) {
         // We have a snapshot, so we will have to go all the way
         // back for the data
         //$ TODO: Should add the feature where we can shortcut this
@@ -1023,7 +1025,7 @@ void RaftHandler::onInstallSnapshot(const Address& from,
         }
         snapshot->prevMembers.reserve(message->offset + message->addresses.size());
         snapshot->prevMembers.insert(snapshot->prevMembers.end(),
-                                     message->addresses.begin() + message->offset,
+                                     message->addresses.begin(),
                                      message->addresses.end());
         snapshot->prevIndex = message->lastIndex;
         snapshot->prevTerm = message->lastTerm;
@@ -1033,11 +1035,14 @@ void RaftHandler::onInstallSnapshot(const Address& from,
             size_t  ndelete = snapshot->prevIndex - node->context.prevIndex;
 
             // Truncate the log
-            node->context.logEntries.erase(
-                node->context.logEntries.begin(),
-                node->context.logEntries.begin() + ndelete);
-            node->context.prevIndex = node->context.currentSnapshot->prevIndex;
-            node->context.prevTerm = node->context.currentSnapshot->prevTerm;
+            if (ndelete > node->context.logEntries.size())
+                node->context.logEntries.clear();
+            else
+                node->context.logEntries.erase(
+                    node->context.logEntries.begin(),
+                    node->context.logEntries.begin() + ndelete);
+            node->context.prevIndex = snapshot->prevIndex;
+            node->context.prevTerm = snapshot->prevTerm;
 
             // Update the memberinfo
             applyLogEntry(Command::CMD_CLEAR_LIST, Address());
@@ -1046,6 +1051,7 @@ void RaftHandler::onInstallSnapshot(const Address& from,
             }
             node->context.setLogChanged(true);
             node->context.lastAppliedIndex = node->context.prevIndex;
+            node->context.commitIndex = node->context.prevIndex;
 
             node->context.currentSnapshot = node->context.workingSnapshot;
             node->context.workingSnapshot = nullptr;
@@ -1120,15 +1126,19 @@ void RaftHandler::onChangeServerCommand(shared_ptr<CommandMessage> message,
     shared_ptr<CommandMessage>  reply;
 
     if (node->context.currentState != State::LEADER) {
-        reply = message->makeReply(false);
-        reply->address = node->context.currentLeader;   // send back the leader
-        reply->errmsg = "not the leader";
+        if (message) {
+            reply = message->makeReply(false);
+            reply->address = node->context.currentLeader;   // send back the leader
+            reply->errmsg = "not the leader";
+        }
     }
     else if (this->memberchange) {
-        // Only one member change operation allowed at a time
-        reply = message->makeReply(false);
-        reply->address = node->context.currentLeader;
-        reply->errmsg = "Add/RemoveServer in progress, this operation is not allowed";
+        if (message) {
+            // Only one member change operation allowed at a time
+            reply = message->makeReply(false);
+            reply->address = node->context.currentLeader;
+            reply->errmsg = "Add/RemoveServer in progress, this operation is not allowed";
+        }
     }
     else {
         int transIdUpdate = getNextMessageId();
@@ -1218,9 +1228,8 @@ void RaftHandler::onTimeout()
 
     // Has the number of entries grown too large?
     if ((par->logCompactionThreshold > 0) &&
-        (node->context.commitIndex > node->context.prevIndex) &&
-        (node->context.logEntries.size() >= par->logCompactionThreshold)) {
-            node->context.takeSnapshot();
+        node->context.isSnapshotNeeded(par->logCompactionThreshold)) {
+        node->context.takeSnapshot();
     }
 }
 

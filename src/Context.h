@@ -307,6 +307,8 @@ struct Context
     // Returns the term at the given index (offset by the snapshot)
     TERM    termAt(INDEX index)
     { 
+        if (this->prevIndex && (this->prevIndex == index))
+            return this->prevTerm;
         return entryAt(index).termReceived;
     }
 
@@ -338,7 +340,7 @@ struct Context
     // Serialization APIs
     void saveToStore();
     void loadFromStore();
-    void saveSnapshotToStore();
+    void saveSnapshotToStore(shared_ptr<Snapshot> snapshot);
     void loadSnapshotFromStore();
 
     // ==================
@@ -382,6 +384,12 @@ struct Context
     // Applies committed but not-yet-applied entries
     void applyCommittedEntries();
 
+    // Returns true if we need to take a snapshot (due to log growth)
+    bool isSnapshotNeeded(INDEX threshold)
+    {
+        return ((prevIndex == 0 && commitIndex+1 >= threshold) ||
+                (prevIndex != 0 && commitIndex- prevIndex >= threshold));
+    }
     // Creates a snapshot of the current config and saves it
     void takeSnapshot();
 
@@ -401,7 +409,7 @@ struct Context
         else
             return this->logEntries.size() - 1;
     }
-    TERM getLastLogTerm()    { return this->logEntries.back().termReceived; }
+    TERM getLastLogTerm()    { return termAt(getLastLogIndex()); }
 
     // Use this to trigger sending of log updates
     bool logChanged() const { return logChanged_; }

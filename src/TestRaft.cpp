@@ -12,237 +12,14 @@
 #include "Raft.h"
 #include "MockNetwork.h"
 
+#include "TestRaftUtil.h"
+
 using namespace Raft;
 
 // In general, the approach is to do black-box testing of the RAFT protocol.
 // Although, sometimes specific calls to look at the internals of the RAFT
 // state may be needed.
 
-
-void runMessageLoop(shared_ptr<NetworkNode> node, Params *par, int tm)
-{
-    par->addToCurrtime(tm);
-    node->receiveMessages();
-    node->processQueuedMessages();
-}
-
-void runMessageLoop(vector<shared_ptr<NetworkNode>>& nodes, Params *par, int tm)
-{
-    par->addToCurrtime(tm);
-    for (auto & node : nodes) {
-        runMessageLoop(node, par, 0);
-    }
-}
-
-void runMessageLoopUntilSilent(shared_ptr<MockNetwork> network,
-                               vector<shared_ptr<NetworkNode>>& nodes,
-                               Params *par)
-{
-    while(network->messages.size() > 0) {
-        runMessageLoop(nodes, par, 1);
-    }
-}
-
-void runMessageLoopUntilActive(shared_ptr<MockNetwork> network,
-                               vector<shared_ptr<NetworkNode>>& nodes,
-                               Params *par)
-{
-    while (network->messages.size() == 0) {
-        runMessageLoop(nodes, par, 1);
-    }
-}
-
-void flushMessages(shared_ptr<IConnection> conn)
-{
-    while (conn->recv(0))
-        ;
-}
-
-void sendAppendEntries(shared_ptr<IConnection> conn,
-                       const Address& addr,
-                       int transid,
-                       int term,
-                       const Address& leaderAddr,
-                       int lastIndex,
-                       int lastTerm,
-                       int commitIndex,
-                       Raft::RaftLogEntry *entry = nullptr)
-{
-    AppendEntriesMessage   append;
-    append.transId = transid;
-    append.term = term;
-    append.leaderAddress = leaderAddr;
-    append.prevLogIndex = lastIndex;
-    append.prevLogTerm = lastTerm;
-    append.leaderCommit = commitIndex;
-
-    if (entry)
-        append.entries.push_back(*entry);
-    
-    auto raw = append.toRawMessage(conn->address(), addr);
-    conn->send(raw.get());
-}
-
-// Initializes the store with the data to start up
-// a node with the specified cluster configuration.
-// The leader gets added at term 0.  All other nodes
-// are added at term 1 by default.
-void initializeStore(Raft::StorageInterface& store,
-                     const Address& leader,
-                     const vector<Address>& nodes)
-{
-    Json::Value root;
-    Address     nullAddress;
-
-    root["currentTerm"] = 1;
-    root["votedFor"] = nullAddress.toAddressString();
-    root["votedForPort"] = nullAddress.getPort();
-
-    Json::Value log;
-    
-    Json::Value logEntry;
-
-    logEntry["t"] = 0;
-    logEntry["c"] = static_cast<int>(Command::CMD_NOOP);
-    logEntry["a"] = Address().toAddressString();
-    logEntry["p"] = Address().getPort();
-    log.append(logEntry);
-
-    logEntry["t"] = 0;
-    logEntry["c"] = static_cast<int>(Command::CMD_ADD_SERVER);
-    logEntry["a"] = leader.toAddressString();
-    logEntry["p"] = leader.getPort();
-    log.append(logEntry);
-
-    for (auto & address: nodes) {
-        logEntry["t"] = 1;
-        logEntry["c"] = static_cast<int>(Command::CMD_ADD_SERVER);
-        logEntry["a"] = address.toAddressString();
-        logEntry["p"] = address.getPort();
-        log.append(logEntry);
-    }
-    root["log"] = log;
-
-    store.write(root);
-}
-
-// This will instantiate a single node with a MockNetwork.
-// It will simulate the leaders and followers to get the
-// instantiated node into the desired state.
-// To start a node as a leader, let leaderAddr = nodeAddr;
-// nodeAddr must ALWAYS be supplied.
-//
-// Parameters
-//  network
-//  par
-//  store - the context store to use for the node
-//      To setup the store for a mulit-node cluster,
-//      use initializeStore().
-//  leaderAddr - the address of the startup leader
-//      may be the same as nodeAddr
-//  nodeAddr - the main node that will be created
-//
-// Returns: a tuple
-//  <0> : shared pointer to the NetworkNode
-//  <1> : shared pointer to the RaftHandler
-//
-std::tuple<shared_ptr<NetworkNode>, shared_ptr<RaftHandler>> 
-createNode(shared_ptr<MockNetwork> network,
-           Params *par,
-           Raft::StorageInterface *store,
-           Raft::StorageInterface *snapshotStore,
-           const Address& leaderAddr,
-           const Address& nodeAddr,
-           int timeoutModifier = 0)
-{
-    string  name("mock");
-    auto conn = network->create(nodeAddr);
-    auto netnode = make_shared<NetworkNode>(name, nullptr, par, network);
-    auto rafthandler = make_shared<Raft::RaftHandler>(nullptr, par, store, 
-                            snapshotStore, netnode, conn);
-    rafthandler->setElectionTimeoutModifier(timeoutModifier);
-    netnode->registerHandler(ConnectType::MEMBER,
-                             conn,
-                             rafthandler);
-
-    netnode->nodeStart(leaderAddr, par->idleTimeout);
-
-    return std::make_tuple(netnode, rafthandler);
-}
-
-// Pulls the RequestVotes off of the queue and replies
-// with a voteGranted=true
-// Does not do any validation.
-void electLeader(shared_ptr<MockNetwork> network,
-                 Params *par,
-                 shared_ptr<NetworkNode> netnode,
-                 const Address& leaderAddr,
-                 const vector<Address>& nodes)
-{
-    // The election should have started, pull the votes
-    // off and reply
-    RequestVoteMessage  request;
-    RequestVoteReply    reply;
-
-    for (auto & addr : nodes) {
-        auto conn = network->find(addr);
-        if (conn == nullptr)
-            conn = network->create(addr);
-        auto raw = conn->recv(0);
-        request.load(raw.get());
-
-        reply.transId = request.transId;
-        reply.term = 1;
-        reply.voteGranted = true;
-        raw = reply.toRawMessage(addr, leaderAddr);
-        conn->send(raw.get());
-    }
-    runMessageLoop(netnode, par, par->electionTimeout);
-}
-
-// Simulates the child nodes accepting AppendEntries until
-// they are "up-to-date"
-// Does not do any validation of the messages.
-void handleNodeUpdates(shared_ptr<MockNetwork> network,
-                       Params *par,
-                       shared_ptr<NetworkNode> netnode,
-                       const Address& leaderAddr,
-                       const vector<Address>& nodes)
-{
-    // Have each node pull off data
-    vector<TERM>     logTerms;
-    AppendEntriesMessage append;
-    AppendEntriesReply reply;
-
-    for (auto & addr : nodes) {
-        logTerms.clear();
-        logTerms.push_back(0);
-
-        auto conn = network->find(addr);
-        auto raw = conn->recv(0);;
-        for (; raw != nullptr; raw = conn->recv(0)) {
-            append.load(raw.get());
-
-            if (append.prevLogIndex > (logTerms.size()-1))
-                reply.success = false;
-            else if (logTerms[append.prevLogIndex] != append.prevLogTerm)
-                reply.success = false;
-            else {
-                logTerms.resize(append.prevLogIndex+1);
-                for (auto & entry : append.entries) {
-                    logTerms.push_back(entry.termReceived);
-                }
-                reply.success = true;
-            }
-            reply.transId = append.transId;
-            reply.term = append.term;
-            auto rawreply = reply.toRawMessage(addr, leaderAddr);
-            conn->send(rawreply.get());
-            
-            runMessageLoop(netnode, par, 0);
-        }
-    }
-}
 
 // Server state testing (see if the Raft states transition
 // properly)
@@ -264,7 +41,7 @@ TEST_CASE("Raft state testing", "[raft][state]")
         vector<Address> nodes;
         nodes.push_back(nodeAddr);
 
-        initializeStore(store, leaderAddr, nodes);
+        store.write(initializeStore(leaderAddr, nodes));
 
         auto nettuple = createNode(network,
                                    &params,
@@ -273,7 +50,6 @@ TEST_CASE("Raft state testing", "[raft][state]")
                                    leaderAddr,
                                    nodeAddr);
         auto netnode = std::get<0>(nettuple);
-
         network->flush();
         runMessageLoop(netnode, &params, 0);
 
@@ -292,7 +68,7 @@ TEST_CASE("Raft state testing", "[raft][state]")
         nodes.push_back(nodeAddr);
         nodes.emplace_back(0x64656667, 8200);
 
-        initializeStore(store, leaderAddr, nodes);
+        store.write(initializeStore(leaderAddr, nodes));
 
         auto nettuple = createNode(network,
                                    &params,
@@ -327,7 +103,7 @@ TEST_CASE("Raft state testing", "[raft][state]")
         nodes.push_back(nodeAddr);
         nodes.emplace_back(0x64656667, 8200);
 
-        initializeStore(store, leaderAddr, nodes);
+        store.write(initializeStore(leaderAddr, nodes));
         auto nettuple = createNode(network,
                                    &params,
                                    &store,
@@ -389,7 +165,7 @@ TEST_CASE("Raft state testing", "[raft][state]")
         nodes.push_back(nodeAddr);
         nodes.emplace_back(0x64656667, 8200);
 
-        initializeStore(store, leaderAddr, nodes);
+        store.write(initializeStore(leaderAddr, nodes));
 
         auto nettuple = createNode(network,
                                    &params,
@@ -683,12 +459,8 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
         REQUIRE(append.leaderCommit == 1);
 
         // Send a reply
-        AppendEntriesReply reply;
-        reply.transId = append.transId;
-        reply.term = append.term;
-        reply.success = true;
-        raw = reply.toRawMessage(myAddr, leaderAddr);
-        mockconn->send(raw.get());
+        sendAppendEntriesReply(mockconn, leaderAddr,
+            append.transId, append.term, true);
         runMessageLoop(netnode, &params, 0);
 
         // Should get another AppendEntries
@@ -704,11 +476,8 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
         REQUIRE(append.leaderCommit == 1);
 
         // Send a reply
-        reply.transId = append.transId;
-        reply.term = append.term;
-        reply.success = true;
-        raw = reply.toRawMessage(myAddr, leaderAddr);
-        mockconn->send(raw.get());
+        sendAppendEntriesReply(mockconn, leaderAddr,
+            append.transId, append.term, true);
         runMessageLoop(netnode, &params, 0);
 
         // Ok, the new server is caught up to the leader
@@ -733,11 +502,8 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
         REQUIRE(append.leaderCommit == 1);
 
         // Send a failure reply (we are not fully up-to-date)
-        reply.transId = append.transId;
-        reply.term = append.term;
-        reply.success = false;
-        raw = reply.toRawMessage(myAddr, leaderAddr);
-        mockconn->send(raw.get());
+        sendAppendEntriesReply(mockconn, leaderAddr,
+            append.transId, append.term, false);
         runMessageLoop(netnode, &params, 0);
 
         // Receive the next entry
@@ -756,11 +522,8 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
         REQUIRE(append.leaderCommit == 1);
 
         // Send a success
-        reply.transId = append.transId;
-        reply.term = append.term;
-        reply.success = true;
-        raw = reply.toRawMessage(myAddr, leaderAddr);
-        mockconn->send(raw.get());
+        sendAppendEntriesReply(mockconn, leaderAddr,
+            append.transId, append.term, true);
         runMessageLoop(netnode, &params, 0);
 
         // Should expect one more AppendEntries
@@ -776,11 +539,8 @@ TEST_CASE("AddServer test cases", "[raft][AddServer]") {
         REQUIRE(append.leaderCommit == 1);
 
         // Send a success
-        reply.transId = append.transId;
-        reply.term = append.term;
-        reply.success = true;
-        raw = reply.toRawMessage(myAddr, leaderAddr);
-        mockconn->send(raw.get());
+        sendAppendEntriesReply(mockconn, leaderAddr,
+            append.transId, append.term, true);
         runMessageLoop(netnode, &params, 0);
 
         // Should receive a command reply
@@ -929,7 +689,7 @@ TEST_CASE("RemoveServer test cases", "[raft][RemoveServer]") {
         nodes.push_back(nodeAddr);
         nodes.push_back(node2Addr);
 
-        initializeStore(store, leaderAddr, nodes);
+        store.write(initializeStore(leaderAddr, nodes));
 
         auto nettuple = createNode(network,
                                    &params,
@@ -986,11 +746,8 @@ TEST_CASE("RemoveServer test cases", "[raft][RemoveServer]") {
         REQUIRE(append.leaderCommit == 3);
 
         // The nodes are up-to-date with the previous config
-        reply.transId = append.transId;
-        reply.term = 1;
-        reply.success = true;
-        raw = reply.toRawMessage(nodeAddr, leaderAddr);
-        mockconn->send(raw.get());
+        sendAppendEntriesReply(mockconn, leaderAddr,
+            append.transId, 1, true);
         runMessageLoop(netnode, &params, 0);
 
         // Waiting for the update to the current config
@@ -1007,11 +764,8 @@ TEST_CASE("RemoveServer test cases", "[raft][RemoveServer]") {
         REQUIRE(append.leaderCommit == 3);
 
         // Send a failure, we don't have the last change
-        reply.transId = append.transId;
-        reply.term = append.term;
-        reply.success = false;
-        raw = reply.toRawMessage(nodeAddr, leaderAddr);
-        mockconn->send(raw.get());
+        sendAppendEntriesReply(mockconn, leaderAddr,
+            append.transId, append.term, false);
         runMessageLoop(netnode, &params, 0);
 
         raw = mockconn->recv(0);
@@ -1029,11 +783,8 @@ TEST_CASE("RemoveServer test cases", "[raft][RemoveServer]") {
         REQUIRE(append.leaderCommit == 3);
 
         // Send a success
-        reply.transId = append.transId;
-        reply.term = append.term;
-        reply.success = true;
-        raw = reply.toRawMessage(nodeAddr, leaderAddr);
-        mockconn->send(raw.get());
+        sendAppendEntriesReply(mockconn, leaderAddr,
+            append.transId, append.term, true);
         runMessageLoop(netnode, &params, 0);
 
         // Should expect one more AppendEntries
@@ -1085,7 +836,7 @@ TEST_CASE("RemoveServer test cases", "[raft][RemoveServer]") {
         vector<Address> nodes;
         nodes.push_back(nodeAddr);
         nodes.push_back(node2Addr);
-        initializeStore(store, leaderAddr, nodes);
+        store.write(initializeStore(leaderAddr, nodes));
 
         auto nettuple = createNode(network,
                                    &params,
@@ -1204,7 +955,10 @@ TEST_CASE("System test", "[raft][system]") {
         shared_ptr<RaftHandler> leaderHandler;
         vector<shared_ptr<NetworkNode>> nodes;
 
-        initializeStore(leaderstore, leaderAddr, vector<Address>());
+        leaderstore.write(initializeStore(leaderAddr, vector<Address>()));
+        network->installFilter([adminAddr](const MockMessage *mess)->bool
+                                { return mess->to != adminAddr; });
+
 
         // Create the leader
         auto admin = network->create(adminAddr);
@@ -1230,37 +984,21 @@ TEST_CASE("System test", "[raft][system]") {
         REQUIRE(nodes.back()->context.currentState == State::FOLLOWER);
 
         // Tell the leader to add the child nodes
-        auto command = make_shared<CommandMessage>();
-        command->type = CommandType::CRAFT_ADDSERVER;
-        command->transId = 1;
-        command->address = node1Addr;
-        command->to = leaderAddr;
-        command->from = adminAddr;
-        leaderHandler->onChangeServerCommand(command,
+        leaderHandler->onChangeServerCommand(nullptr,
                                              Command::CMD_ADD_SERVER,
                                              node1Addr);
-        while (network->messages.size() > 0) {
-            runMessageLoop(nodes, &params, 1);
-            flushMessages(admin);
-        }
+
+        runMessageLoopUntilSilent(network, nodes, &params);
 
         REQUIRE(nodes[0]->context.currentState == State::LEADER);
         REQUIRE(nodes[0]->member.memberList.size() == 2);
 
-        command->type = CommandType::CRAFT_ADDSERVER;
-        command->transId = 2;
-        command->address = node2Addr;
-        command->to = leaderAddr;
-        command->from = adminAddr;
-        leaderHandler->onChangeServerCommand(command,
+        leaderHandler->onChangeServerCommand(nullptr,
                                              Command::CMD_ADD_SERVER,
                                              node2Addr);
 
         // Let the system settle
-        while (network->messages.size() > 0) {
-            runMessageLoop(nodes, &params, 1);
-            flushMessages(admin);
-        }
+        runMessageLoopUntilSilent(network, nodes, &params);
 
         // Verify the expected system state
         REQUIRE(nodes[0]->member.memberList.size() == 3);
@@ -1276,10 +1014,8 @@ TEST_CASE("System test", "[raft][system]") {
         auto leaderconn = network->findMockConnection(leaderAddr);
         int sent = static_cast<int>(leaderconn->messagesSent);
 
-        for (int i=0; i<2*params.idleTimeout; i++) {
+        for (int i=0; i<2*params.idleTimeout; i++)
             runMessageLoop(nodes, &params, 1);
-            flushMessages(admin);
-        }
 
         REQUIRE(leaderconn->messagesSent == (sent+8));
         REQUIRE(nodes[0]->member.isMember(leaderAddr));
@@ -1323,7 +1059,7 @@ TEST_CASE("Raft elections", "[raft][election][system]")
         Raft::MemoryBasedStorage store(&params);
         vector<shared_ptr<NetworkNode>> nodes;
 
-        initializeStore(leaderstore, leaderAddr, addresses);
+        leaderstore.write(initializeStore(leaderAddr, addresses));
 
         // Create the leader
         auto nettuple = createNode(network, &params, &leaderstore, nullptr,
@@ -1410,7 +1146,7 @@ TEST_CASE("Raft elections", "[raft][election][system]")
         addresses.push_back(node3Addr);
         addresses.push_back(node4Addr);
 
-        initializeStore(leaderstore, leaderAddr, addresses);
+        leaderstore.write(initializeStore(leaderAddr, addresses));
 
         // Create the leader
         auto nettuple = createNode(network, &params, &leaderstore, nullptr,
@@ -1478,16 +1214,443 @@ TEST_CASE("Raft elections", "[raft][election][system]")
 
 // Test cases for log compaction
 TEST_CASE("Raft log compaction", "[raft][snapshot]") {
+    Params      params;
+    Address     node1Addr(0x64656667, 8100); // 100.101.102.103:8100
+    Address     node2Addr(0x64656667, 8200); // 100.101.102.103:8200
+    Address     node3Addr(0x64656667, 8300); // 100.101.102.103:8300
+    Address     adminAddr(0x64656667, 8999); // 100.101.102.103:8999
+    Address     leaderAddr(0x64656667, 9000); // 100.101.102.103:9000
+    vector<Address> nodes;
+    nodes.push_back(node1Addr);
+    nodes.push_back(node2Addr);
+
+    // Setup the timeouts
+    params.electionTimeout = 10;
+    params.idleTimeout = 5;   // not used by the mock network
+    params.rpcTimeout = 5;
+    params.logCompactionThreshold = 2;
+    params.maxSnapshotSize = 1;
+
     // test snapshot sending
     // Main node: 9000
     // Nodes: 9000 (leader), 8100
     // Action: start up 9000 (leader), test updating via snapshot
     SECTION("basic snapshot update - leader") {
-        // Create the leader
+        auto network = MockNetwork::createNetwork(&params);
+        auto conn1 = network->create(node1Addr);
+        auto conn2 = network->create(node2Addr);
+        Raft::MemoryBasedStorage store(&params);
+        Raft::MemoryBasedStorage snapshotStore(&params);        
+        set<Address>    allowed;
+
+        allowed.insert(leaderAddr);
+        allowed.insert(node1Addr);
+
+        network->installFilter([&allowed](const MockMessage *mess)->bool
+                { return allowed.count(mess->to) != 0; });
+
+        auto root = initializeStore(leaderAddr, vector<Address>());
+        append(root["log"], 2, Command::CMD_ADD_SERVER, node1Addr);
+        append(root["log"], 2, Command::CMD_REMOVE_SERVER, node1Addr);
+        append(root["log"], 2, Command::CMD_ADD_SERVER, node2Addr);
+        append(root["log"], 2, Command::CMD_REMOVE_SERVER, node2Addr);
+        root["currentTerm"] = 2;
+        store.write(root);
+
+        auto nettuple = createNode(network,
+                                   &params,
+                                   &store,
+                                   &snapshotStore,
+                                   leaderAddr,
+                                   leaderAddr);
+        auto node = std::get<0>(nettuple);
+        auto rafthandler = std::get<1>(nettuple);
+
+        runMessageLoop(node, &params, 0);
+        runMessageLoop(node, &params, params.electionTimeout);
+
+        REQUIRE(node->context.currentSnapshot != nullptr);
+        REQUIRE(node->context.prevIndex == 5);
+        REQUIRE(node->context.logEntries.size() == 0);
+        REQUIRE(!node->context.snapshotStore->empty());
+
+        // Now Add a server and look at the updates coming through
+        rafthandler->onChangeServerCommand(nullptr,
+                                           Command::CMD_ADD_SERVER,
+                                           node1Addr);
+
+        // Should update the new server to current config
+        // There should be a message to the new server
+
+        // Should attempt to update to previous config
+        // Start with an appendEntries
+        // Receive empty appendEntries on mockconn
+        auto raw = conn1->recv(0);
+        REQUIRE(raw != nullptr);
+        HeaderOnlyMessage       header;
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::INSTALL_SNAPSHOT);
+
+        InstallSnapshotMessage install;
+        install.load(raw.get());
+        REQUIRE(install.term == 4);
+        REQUIRE(install.lastIndex == 5);
+        REQUIRE(install.lastTerm == 2);
+        REQUIRE(install.offset == 0);
+        REQUIRE(install.addresses.size() == 1);
+        REQUIRE(install.done == true);
+
+        // Send a reply
+        sendInstallSnapshotReply(conn1, leaderAddr,
+            install.transId, install.term);
+        runMessageLoop(node, &params, 0);
+
+        raw = conn1->recv(0);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
+
+        AppendEntriesMessage append;
+        append.load(raw.get());
+        REQUIRE(append.term == 4);
+        REQUIRE(append.prevLogIndex == 6);
+        REQUIRE(append.prevLogTerm == 4);
+        REQUIRE(append.entries.size() == 0);
+        REQUIRE(append.leaderCommit == 5);
+
+        sendAppendEntriesReply(conn1, leaderAddr,
+            append.transId, append.term, false);
+        runMessageLoop(node, &params, 0);
+
+        raw = conn1->recv(0);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
+
+        append.load(raw.get());
+        REQUIRE(append.term == 4);
+        REQUIRE(append.prevLogIndex == 5);
+        REQUIRE(append.prevLogTerm == 2);
+        REQUIRE(append.entries.size() == 1);
+        REQUIRE(append.leaderCommit == 5);
+
+        sendAppendEntriesReply(conn1, leaderAddr,
+            append.transId, append.term, true);
+        runMessageLoop(node, &params, 0);
+
+        raw = conn1->recv(0);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
+        
+        append.load(raw.get());
+        REQUIRE(append.term == 4);
+        REQUIRE(append.prevLogIndex == 6);
+        REQUIRE(append.prevLogTerm == 4);
+        REQUIRE(append.entries.size() == 0);
+        REQUIRE(append.leaderCommit == 5);
+
+        sendAppendEntriesReply(conn1, leaderAddr,
+                               append.transId, append.term, true);
+        runMessageLoop(node, &params, 0);
     }
 
+    // test snapshot sending
+    // Main node: 9000
+    // Nodes: 9000 (leader), 8100, 8200
+    // Action: start up 9000 (leader), test updating via snapshot
+    // should be sending multiple InstallSnapshot messages
+    SECTION("basic snapshot update multiple messages - leader") {
+        auto network = MockNetwork::createNetwork(&params);
+        Raft::MemoryBasedStorage store(&params);
+        Raft::MemoryBasedStorage snapshotStore(&params);     
+        vector<TermNode> termNodes;
+        set<Address>    allowed;
+
+        allowed.insert(leaderAddr);
+        allowed.insert(node1Addr);
+        allowed.insert(node2Addr);
+        allowed.insert(node3Addr);
+
+        termNodes.emplace_back(node1Addr);
+        termNodes.emplace_back(node2Addr);
+
+        network->installFilter([&allowed](const MockMessage *mess)->bool
+                { return allowed.count(mess->to) != 0; });
+
+        auto root = initializeStore(leaderAddr, vector<Address>());
+        root["currentTerm"] = 2;
+        store.write(root);
+
+        auto nettuple = createCluster(network, &params, &store, &snapshotStore,
+                                      leaderAddr, termNodes);
+        auto node = std::get<0>(nettuple);
+        auto rafthandler = std::get<1>(nettuple);
+        auto conn3 = network->create(node3Addr);
+
+        REQUIRE(node->member.memberList.size() == 3);
+        REQUIRE(node->context.currentSnapshot != nullptr);
+        REQUIRE(node->context.prevIndex == 3);
+        REQUIRE(node->context.commitIndex == 3);
+
+        rafthandler->onChangeServerCommand(nullptr,
+                                           Command::CMD_ADD_SERVER,
+                                           node3Addr);
+        runMessageLoop(node, &params, 1);
+
+        REQUIRE(node->context.currentSnapshot != nullptr);
+        REQUIRE(node->context.prevIndex == 3);
+
+        // Should see the app try to update node3
+        auto raw = conn3->recv(0);
+        REQUIRE(raw != nullptr);
+        HeaderOnlyMessage       header;
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::INSTALL_SNAPSHOT);
+
+        InstallSnapshotMessage install;
+        install.load(raw.get());
+        REQUIRE(install.term == 4);
+        REQUIRE(install.lastIndex == 3);
+        REQUIRE(install.lastTerm == 4);
+        REQUIRE(install.offset == 0);
+        REQUIRE(install.addresses.size() == 1);
+        REQUIRE(install.done == false);
+
+        sendInstallSnapshotReply(conn3, leaderAddr,
+            install.transId, install.term);
+        runMessageLoop(node, &params, 0);
+
+        raw = conn3->recv(0);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::INSTALL_SNAPSHOT);
+        install.load(raw.get());
+        REQUIRE(install.term == 4);
+        REQUIRE(install.lastIndex == 3);
+        REQUIRE(install.lastTerm == 4);
+        REQUIRE(install.offset == 1);
+        REQUIRE(install.addresses.size() == 1);
+        REQUIRE(install.done == false);
+
+        sendInstallSnapshotReply(conn3, leaderAddr,
+            install.transId, install.term);
+        runMessageLoop(node, &params, 0);
+
+        raw = conn3->recv(0);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::INSTALL_SNAPSHOT);
+        install.load(raw.get());
+        REQUIRE(install.term == 4);
+        REQUIRE(install.lastIndex == 3);
+        REQUIRE(install.lastTerm == 4);
+        REQUIRE(install.offset == 2);
+        REQUIRE(install.addresses.size() == 1);
+        REQUIRE(install.done == true);
+
+        sendInstallSnapshotReply(conn3, leaderAddr,
+            install.transId, install.term);
+        runMessageLoop(node, &params, 0);
+        handleNodeUpdates(network, &params, node, leaderAddr, termNodes);
+
+        // Ensure that we've gone past the snapshot phase
+        raw = conn3->recv(0);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
+        AppendEntriesMessage append;
+        append.load(raw.get());
+        REQUIRE(append.term == 4);
+        REQUIRE(append.prevLogIndex == 4);
+        REQUIRE(append.prevLogTerm == 4);
+        REQUIRE(append.entries.size() == 0);
+        REQUIRE(append.leaderCommit == 3);
+
+        sendAppendEntriesReply(conn3, leaderAddr,
+            append.transId, append.term, false);
+        runMessageLoop(node, &params, 0);
+
+        raw = conn3->recv(0);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
+        append.load(raw.get());
+        REQUIRE(append.term == 4);
+        REQUIRE(append.prevLogIndex == 3);
+        REQUIRE(append.prevLogTerm == 4);
+        REQUIRE(append.entries.size() == 1);
+        REQUIRE(append.entries[0].address == node3Addr);
+        REQUIRE(append.leaderCommit == 4);
+
+        sendAppendEntriesReply(conn3, leaderAddr,
+            append.transId, append.term, true);
+        runMessageLoop(node, &params, 0);
+
+        raw = conn3->recv(0);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES);
+        append.load(raw.get());
+        REQUIRE(append.term == 4);
+        REQUIRE(append.prevLogIndex == 4);
+        REQUIRE(append.prevLogTerm == 4);
+        REQUIRE(append.entries.size() == 0);
+        REQUIRE(append.leaderCommit == 4);
+    }
+
+    // test snapshot sending
+    // Main node: 8100
+    // Nodes: 9000 (leader), 8100
+    // Action: start up 8100, test updating via snapshot
     SECTION("basic snapshot update - follower") {
+        auto network = MockNetwork::createNetwork(&params);
+        auto leaderconn = network->create(leaderAddr);
+        Raft::MemoryBasedStorage store(&params);
+        Raft::MemoryBasedStorage snapshotStore(&params);        
+
+        auto nettuple = createNode(network,
+                                   &params,
+                                   &store,
+                                   &snapshotStore,
+                                   leaderAddr,
+                                   node1Addr);
+        auto node = std::get<0>(nettuple);
+        auto rafthandler = std::get<1>(nettuple);
+        auto conn1 = network->find(node1Addr);
+
+        runMessageLoop(node, &params, 0);
+
+        REQUIRE(node->context.currentSnapshot == nullptr);
+        REQUIRE(node->context.prevIndex == 0);
+
+        // Now assume that we're a new server that is
+        // updating the follower
+        vector<Address> data;
+        data.push_back(leaderAddr);
+
+        sendInstallSnapshot(leaderconn, node1Addr, leaderAddr,
+                            1 /*transid*/, 4 /*term*/,
+                            5 /*lastIndex*/, 2 /*lastTerm*/,
+                            0 /*offset*/, true /*done*/, data);
+        runMessageLoop(node, &params, 0);
+
+        auto raw = leaderconn->recv(0);
+        REQUIRE(raw != nullptr);
+        HeaderOnlyMessage header;
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::INSTALL_SNAPSHOT_REPLY);
+        InstallSnapshotReply  ireply;
+        ireply.load(raw.get());
+
+        REQUIRE(node->member.memberList.size() == 1);
+        REQUIRE(node->context.prevIndex == 5);
+        REQUIRE(node->context.currentSnapshot != nullptr);
+        REQUIRE(node->context.commitIndex == 5);
+        REQUIRE(node->context.lastAppliedIndex == 5);
+        REQUIRE(node->context.logEntries.size() == 0);
+
+        // Send an append entries
+        sendAppendEntries(leaderconn, node1Addr,
+                          2 /*transid*/, 4 /*term */,
+                          leaderAddr, 5 /* lastIndex*/, 2 /*lastTerm*/,
+                          5 /*commitIndex*/);
+        runMessageLoop(node, &params, 0);
+
+        raw = leaderconn->recv(0);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES_REPLY);
+        AppendEntriesReply reply;
+        reply.load(raw.get());
+        REQUIRE(reply.success == true);
+
+        //$ TODO : move this test to an error section test
+        // Try it with a bad lastTerm
+        sendAppendEntries(leaderconn, node1Addr,
+                          2 /*transid*/, 4 /*term */,
+                          leaderAddr, 5 /* lastIndex*/, 22 /*lastTerm*/,
+                          5 /*commitIndex*/);
+        runMessageLoop(node, &params, 0);
+
+        raw = leaderconn->recv(0);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES_REPLY);
+        reply.load(raw.get());
+        REQUIRE(reply.success == false);
+
+        //$ TODO: move this to an error section test
+        // Try it with an index past the end
+        sendAppendEntries(leaderconn, node1Addr,
+                          2 /*transid*/, 4 /*term */,
+                          leaderAddr, 55 /* lastIndex*/, 2 /*lastTerm*/,
+                          5 /*commitIndex*/);
+        runMessageLoop(node, &params, 0);
+
+        raw = leaderconn->recv(0);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::APPEND_ENTRIES_REPLY);
+        reply.load(raw.get());
+        REQUIRE(reply.success == false);
+    }
+
+    SECTION("basic snapshot multi message update - follower") {
         // Create the leader
+        auto network = MockNetwork::createNetwork(&params);
+        auto leaderconn = network->create(leaderAddr);
+        Raft::MemoryBasedStorage store(&params);
+        Raft::MemoryBasedStorage snapshotStore(&params);        
+
+        auto nettuple = createNode(network,
+                                   &params,
+                                   &store,
+                                   &snapshotStore,
+                                   leaderAddr,
+                                   node1Addr);
+        auto node = std::get<0>(nettuple);
+        auto rafthandler = std::get<1>(nettuple);
+        auto conn1 = network->find(node1Addr);
+
+        runMessageLoop(node, &params, 0);
+
+        REQUIRE(node->context.currentSnapshot == nullptr);
+        REQUIRE(node->context.prevIndex == 0);
+
+        // Now assume that we're a new server that is
+        // updating the follower
+        vector<Address> data;
+        data.push_back(leaderAddr);
+
+        sendInstallSnapshot(leaderconn, node1Addr, leaderAddr,
+                            1 /*transid*/, 4 /*term*/,
+                            5 /*lastIndex*/, 2 /*lastTerm*/,
+                            0 /*offset*/, false /*done*/, data);
+        runMessageLoop(node, &params, 0);
+
+        REQUIRE(node->member.memberList.size() == 0);
+        REQUIRE(node->context.prevIndex == 0);
+        REQUIRE(node->context.currentSnapshot == nullptr);
+        REQUIRE(node->context.commitIndex == 0);
+        REQUIRE(node->context.lastAppliedIndex == 0);
+        REQUIRE(node->context.logEntries.size() == 1);
+
+        auto raw = leaderconn->recv(0);
+        REQUIRE(raw != nullptr);
+        HeaderOnlyMessage header;
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::INSTALL_SNAPSHOT_REPLY);
+
+        data.clear();
+        data.push_back(node2Addr);
+
+        sendInstallSnapshot(leaderconn, node1Addr, leaderAddr,
+                            1 /*transid*/, 4 /*term*/,
+                            5 /*lastIndex*/, 2 /*lastTerm*/,
+                            1 /*offset*/, true /*done*/, data);
+        runMessageLoop(node, &params, 0);
+
+        REQUIRE(node->member.memberList.size() == 2);
+        REQUIRE(node->context.prevIndex == 5);
+        REQUIRE(node->context.currentSnapshot != nullptr);
+        REQUIRE(node->context.commitIndex == 5);
+        REQUIRE(node->context.lastAppliedIndex == 5);
+        REQUIRE(node->context.logEntries.size() == 0);
+
+        raw = leaderconn->recv(0);
+        REQUIRE(raw != nullptr);
+        header.load(raw.get());
+        REQUIRE(header.msgtype == MessageType::INSTALL_SNAPSHOT_REPLY);
     }
 
     SECTION("basic snapshot update - system test") {

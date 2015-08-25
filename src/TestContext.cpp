@@ -217,7 +217,8 @@ TEST_CASE("Context", "[context]")
         REQUIRE(netnode->context.currentSnapshot->prevTerm == 40);
         REQUIRE(netnode->context.currentSnapshot->prevMembers.size() == 2);
         REQUIRE(netnode->context.prevIndex == 4);
-        REQUIRE_THROWS(netnode->context.termAt(4));
+        REQUIRE_THROWS(netnode->context.termAt(3));
+        REQUIRE(netnode->context.termAt(4) == 40);
         REQUIRE(netnode->context.termAt(5) == 50);
         REQUIRE_THROWS(netnode->context.termAt(9));
     }

@@ -454,6 +454,9 @@ protected:
     unsigned int offset;
     shared_ptr<Snapshot> snapshot;
 
+    // Sends an update (may be an AppendEntries or an InstallSnapshot)
+    // Passing in force=true will force an AppendEntries with the given
+    // index.
     void        sendAppendEntriesRequest(INDEX index);
 
     Transaction::RESULT     onAppendEntriesReply(const RawMessage *raw);

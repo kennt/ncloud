@@ -203,26 +203,26 @@ void Context::saveToStore()
     root["log"] = log;
 
     store->write(root);
-    saveSnapshotToStore();
+    saveSnapshotToStore(this->currentSnapshot);
 }
 
-void Context::saveSnapshotToStore()
+void Context::saveSnapshotToStore(shared_ptr<Snapshot> snapshot)
 {
     if (!this->snapshotStore)
         return;
 
     snapshotStore->reset();
 
-    if (!this->currentSnapshot)
+    if (!snapshot)
         return;
 
     Json::Value snapshotRoot;
 
-    snapshotRoot["index"] = static_cast<Json::UInt>(this->currentSnapshot->prevIndex);
-    snapshotRoot["term"] = static_cast<Json::UInt>(this->currentSnapshot->prevTerm);
+    snapshotRoot["index"] = static_cast<Json::UInt>(snapshot->prevIndex);
+    snapshotRoot["term"] = static_cast<Json::UInt>(snapshot->prevTerm);
 
     Json::Value memberRoot;
-    for (auto & addr : this->currentSnapshot->prevMembers) {
+    for (auto & addr : snapshot->prevMembers) {
         Json::Value entry;
         entry["a"] = addr.toAddressString();
         entry["p"] = addr.getPort();
@@ -282,6 +282,14 @@ void Context::changeMembership(Command cmd, const Address& address)
 
 void Context::onTimeout()
 {
+    auto node = this->handler->node();
+
+    // Special case, if we are the only node left
+    // mark all entries as committed.  Allows nodes
+    // to start up.
+    if (node->member.memberList.size() == 1)
+        node->context.commitIndex = node->context.getLastLogIndex();
+
     applyCommittedEntries();
 }
 
@@ -424,12 +432,13 @@ void Context::checkCommitIndex(INDEX sentLogIndex)
         return;
 
     // Check to see if we have a possible new commit index
-    unsigned int total = 0;
+    // Start at 1 (don't forget ourselves!)
+    unsigned int total = 1;
     for (const auto & elem : this->followers) { 
         if (elem.second.matchIndex >= sentLogIndex)
             total++;
     }
-    if (2*total > this->followers.size()) {
+    if (2*total > this->followers.size()+1) {
         this->commitIndex = sentLogIndex;
     }
 }
@@ -471,6 +480,11 @@ void Context::takeSnapshot()
     snapshot->prevIndex = this->commitIndex;
     snapshot->prevTerm = termAt(snapshot->prevIndex);
     snapshot->prevMembers = runLogEntries(snapshot->prevIndex);
+
+    //$ TODO: What to do with a failure to save?
+    saveSnapshotToStore(snapshot);
+
+    this->currentSnapshot = snapshot;
 
     // Truncate the log
     this->logEntries.erase(this->logEntries.begin(),

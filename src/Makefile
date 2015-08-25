@@ -83,6 +83,7 @@ test: TestMain.o \
 		TestContext.o \
 		TestNetwork.o \
 		TestRaft.o \
+		TestRaftUtil.o \
 		TestSimNetwork.o \
 		MockNetwork.o \
 		Command.o \
@@ -96,7 +97,7 @@ test: TestMain.o \
 		SimNetwork.o \
 		Util.o \
 		jsoncpp.o
-	g++ -o test TestMain.o TestContext.o TestNetwork.o TestSimNetwork.o TestRaft.o MockNetwork.o Command.o Context.o NetworkNode.o Member.o Log.o SimNetwork.o Raft.o Util.o Params.o Ring.o jsoncpp.o
+	g++ -o test TestMain.o TestContext.o TestNetwork.o TestSimNetwork.o TestRaft.o TestRaftUtil.o MockNetwork.o Command.o Context.o NetworkNode.o Member.o Log.o SimNetwork.o Raft.o Util.o Params.o Ring.o jsoncpp.o
 
 Log.o: Log.cpp \
 		Log.h \
@@ -291,11 +292,21 @@ TestMain.o: TestMain.cpp
 
 TestRaft.o: TestRaft.cpp \
 		Context.h \
+		MockNetwork.h \
+		Network.h \
+		Raft.h \
+		Params.h \
+		TestRaftUtil.h
+	g++ -c TestRaft.cpp ${CFLAGS}
+
+TestRaftUtil.o: TestRaftUtil.cpp \
+		TestRaftUtil.h \
+		Context.h \
 		Network.h \
 		Raft.h \
 		MockNetwork.h \
 		Params.h
-	g++ -c TestRaft.cpp ${CFLAGS}
+	g++ -c TestRaftUtil.cpp ${CFLAGS}
 
 TestSimNetwork.o: TestSimNetwork.cpp
 	g++ -c TestSimNetwork.cpp ${CFLAGS}
